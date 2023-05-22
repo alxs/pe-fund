@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.18;
 
-import "../interfaces/ISecurityToken.sol";
+import "../interfaces/IFundToken.sol";
 
 /**
- * @title Distribution contract
- * @notice This contract implements a distribution system for a given amount, type and timestamp.
- * @dev Storage for distributions and total distribution amount. The contract interfaces with ISecurityToken for token distributions.
+ * @title Distribution Contract
+ * @notice Manages the distribution of a specific amount and type at a certain time.
+ * @dev This contract holds the total distribution amount and individual distributions. It utilizes the IFundToken interface for token-based distributions.
  */
 contract Distributions {
-    // Total amount for distributions
+    // Aggregate amount distributed
     uint256 public totalDistribution;
 
-    // Mappings of distributions, accessible by their IDs
+    // Map of distributions, each identifiable by a unique ID
     mapping(uint32 => Distribution) public distributions;
 
-    // Count of total distributions made
+    // Tally of distributions made
     uint32 public distributionsCount;
 
-    // Struct representing a distribution, including amount, type, and time
+    // Struct encapsulating properties of a distribution
     struct Distribution {
         uint256 amount;
         string distributionType;
@@ -26,12 +26,12 @@ contract Distributions {
     }
 
     /**
-     * @notice Add a new distribution to the system
-     * @dev Updates the distributions mapping with a new distribution struct and increments the distributionsCount
-     * @param amount The amount of distribution to be added
-     * @param distributionType The type of the distribution
-     * @param time The timestamp of the distribution
-     * @return The ID of the newly created distribution
+     * @notice Registers a new distribution
+     * @dev Appends a new Distribution struct to the distributions mapping and increments the distributionsCount
+     * @param amount The volume of distribution
+     * @param distributionType The category of the distribution
+     * @param time The timestamp associated with the distribution
+     * @return The ID assigned to the new distribution
      */
     function addDistribution(uint256 amount, string memory distributionType, uint256 time) public returns (uint32) {
         distributions[distributionsCount] =
@@ -42,32 +42,32 @@ contract Distributions {
     }
 
     /**
-     * @notice Sets the total distribution
-     * @dev Mutates the totalDistribution state variable with the provided value
-     * @param value The new total distribution value
+     * @notice Defines the total distribution value
+     * @dev Replaces the current totalDistribution value with the input parameter
+     * @param value The proposed total distribution volume
      */
     function setTotalDistribution(uint256 value) public {
         totalDistribution = value;
     }
 
     /**
-     * @notice Processes a distribution by interfacing with a token contract
-     * @dev Calls the distribute function of a given ISecurityToken contract
-     * @param token The address of the target ISecurityToken contract
-     * @param distributionType The type of the distribution
-     * @param time The time of the distribution
-     * @param distId The ID of the distribution
-     * @param amount The amount to distribute
-     * @param scale The scale of the distribution
+     * @notice Executes a distribution via an IFundToken contract
+     * @dev Invokes the distribute function of a specified IFundToken contract
+     * @param token The address of the IFundToken contract to be interfaced with
+     * @param distributionType The category of the distribution
+     * @param time The timestamp associated with the distribution
+     * @param distId The ID assigned to the distribution
+     * @param amount The volume to be distributed
+     * @param scale The proportion of the distribution
      */
     function processDistribution(
-        ISecurityToken token,
+        IFundToken token,
         string calldata distributionType,
         uint256 time,
         uint32 distId,
         uint256 amount,
         uint256 scale
     ) internal {
-        ISecurityToken(token).distribute(distId, distributionType, time, amount, scale);
+        IFundToken(token).distribute(distId, distributionType, time, amount, scale);
     }
 }

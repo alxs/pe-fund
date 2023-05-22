@@ -2,53 +2,48 @@
 pragma solidity 0.8.18;
 
 /**
- * @title Deployments
- * @dev The Deployments contract has an initializer and functions to manage deployments.
+ * @title Deployments Contract
+ * @notice This contract is used to manage and track the deployment of assets.
  */
 contract Deployments {
-
-    // Struct to store deployment details
     struct Deployment {
-        uint256 amount;
-        uint256 time;
-        address assetContract;
+        uint256 amount; // Amount of assets deployed
+        uint32 time; // Timestamp of the deployment
+        address assetContract; // Address of the deployed asset's contract
     }
 
-    // Array to store deployments
+    // Array storing all the asset deployments
     Deployment[] public deployments;
 
-    // Internal variables for total deployed and deployment start
+    // Variables to keep track of total amount deployed and the start time of the first deployment
     uint256 public totalDeployed;
-    uint256 public deploymentStart;
+    uint32 public deploymentStart;
 
     /**
-     * @dev Initializes the contract setting the initial deployments to zero.
+     * @dev Sets the deployment start timestamp, can only be set once.
+     * @param value The timestamp to be set as the start of the deployment
      */
-    function init() public {
-
-    }
-
-    /**
-     * @dev Sets the deployment start.
-     * @param value The value to set
-     */
-    function setDeploymentStart(uint256 value) public {
-        require(deploymentStart == 0, "Deployment start already set");
+    function setDeploymentStart(uint32 value) public {
+        require(deploymentStart == 0, "Deployment start time can only be set once");
         deploymentStart = value;
     }
 
     /**
-     * @dev Deploys the capital.
-     * @param amount The amount to deploy
-     * @param time The timestamp of deployment
-     * @param assetContract The address of the asset contract
+     * @dev Deploys the specified amount of capital at the given time to the given asset contract.
+     * @param amount The amount of capital to be deployed
+     * @param time The timestamp when the capital is deployed
+     * @param assetContract The contract address where the capital will be deployed
      */
-    function deployCapital(uint256 amount, uint256 time, address assetContract) public {
-        // Add the deployment
+    function deployCapital(uint256 amount, uint32 time, address assetContract) public {
+        // Create and add the new deployment to the deployments array
         deployments.push(Deployment(amount, time, assetContract));
 
-        // Update the total
-        totalDeployed = totalDeployed + amount;
-        setDeploymentStart(time);
+        // Update the total amount deployed
+        totalDeployed += amount;
+
+        // Set the deployment start timestamp, if it's not set yet
+        if (deploymentStart == 0) {
+            setDeploymentStart(time);
+        }
     }
 }

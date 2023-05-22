@@ -4,31 +4,37 @@ pragma solidity 0.8.18;
 // @todo use trusted library for date/time calculations
 import "lib/BokkyPooBahsDateTimeLibrary/contracts/BokkyPooBahsDateTimeLibrary.sol";
 
+/**
+ * @title InterestPayments
+ * @dev A smart contract for managing interest payments
+ */
 contract InterestPayments {
     struct InterestEntry {
-        uint256 time;
-        uint256 capital;
-        uint256 daily;
-        uint256 total;
+        uint32 time; // UNIX timestamp of the entry
+        uint256 capital; // Principal amount
+        uint256 daily; // Daily interest
+        uint256 total; // Total accumulated interest
     }
 
-    uint256 private constant ANNUAL_COMPOUNDING = 1;
-    uint256 private constant QUARTERLY_COMPOUNDING = 2;
+    uint8 private constant ANNUAL_COMPOUNDING = 1;
+    uint8 private constant QUARTERLY_COMPOUNDING = 2;
 
     InterestEntry[] private interestEntries;
 
-    /// @notice Add an inflow of funds and update the compounding interest calculations.
-    /// @param amount The amount of the inflow.
-    /// @param scale The scale factor used to calculate the daily interest rate.
-    /// @param interestRate The annual nominal interest rate, in basis points.
-    /// @param time The UNIX timestamp at which the inflow occurs.
-    /// @param cp The compounding period, either ANNUAL_COMPOUNDING or QUARTERLY_COMPOUNDING.
-    /// @return The updated total capital after the inflow.
-    function addInflow(uint256 amount, uint256 scale, uint256 interestRate, uint256 time, uint8 cp)
-        public
+    /**
+     * @dev Adds an inflow of funds and updates the compounding interest calculations.
+     * @param amount Amount of the inflow
+     * @param scale Scale factor for calculating the daily interest rate
+     * @param interestRate Annual nominal interest rate in basis points
+     * @param time UNIX timestamp of the inflow occurrence
+     * @param cp Compounding period - either ANNUAL_COMPOUNDING or QUARTERLY_COMPOUNDING
+     * @return The updated total capital after the inflow
+     */
+    function _addInflow(uint256 amount, uint256 scale, uint256 interestRate, uint32 time, uint8 cp)
+        internal
         returns (uint256)
     {
-        (uint256 dt, uint256 capital, uint256 d, uint256 tcf) = computeCompounding(cp, scale, interestRate, time);
+        (uint256 dt, uint256 capital, uint256 d, uint256 tcf) = _computeCompounding(cp, scale, interestRate, time);
 
         if (dt > 0) {
             uint256 od = convertEncodedTime(dt);
@@ -46,18 +52,20 @@ contract InterestPayments {
         return tcf;
     }
 
-    /// @notice Add an outflow of funds and update the compounding interest calculations.
-    /// @param amount The amount of the outflow.
-    /// @param scale The scale factor used to calculate the daily interest rate.
-    /// @param interestRate The annual nominal interest rate, in basis points.
-    /// @param time The UNIX timestamp at which the outflow occurs.
-    /// @param cp The compounding period, either ANNUAL_COMPOUNDING or QUARTERLY_COMPOUNDING.
-    /// @return A tuple containing the remaining amount to be withdrawn, the capital paid, and the interest paid.
-    function addOutflow(uint256 amount, uint256 scale, uint256 interestRate, uint256 time, uint8 cp)
-        public
+    /**
+     * @dev Adds an outflow of funds and updates the compounding interest calculations.
+     * @param amount Amount of the outflow
+     * @param scale Scale factor for calculating the daily interest rate
+     * @param interestRate Annual nominal interest rate in basis points
+     * @param time UNIX timestamp of the outflow occurrence
+     * @param cp Compounding period - either ANNUAL_COMPOUNDING or QUARTERLY_COMPOUNDING
+     * @return A tuple containing the remaining amount to be withdrawn, the capital paid, and the interest paid.
+     */
+    function _addOutflow(uint256 amount, uint256 scale, uint256 interestRate, uint32 time, uint8 cp)
+        internal
         returns (uint256, uint256, uint256)
     {
-        (uint256 dt, uint256 capital, uint256 d, uint256 tcf) = computeCompounding(cp, scale, interestRate, time);
+        (uint32 dt, uint256 capital, uint256 d, uint256 tcf) = _computeCompounding(cp, scale, interestRate, time);
 
         uint256 capitalPaid = 0;
         uint256 interestPaid = 0;
@@ -93,29 +101,35 @@ contract InterestPayments {
         return (remainingAmount, capitalPaid, interestPaid);
     }
 
-    /// @notice Compute the compounding interest for the given compounding period.
-    /// @param cp The compounding period, either ANNUAL_COMPOUNDING or QUARTERLY_COMPOUNDING.
-    /// @param scale The scale factor used to calculate the daily interest rate.
-    /// @param interestRate The annual nominal interest rate, in basis points.
-    /// @param time The UNIX timestamp at which the computation is performed.
-    /// @return A tuple containing the date of the last interest payment, the capital, the daily interest, and the total capital.
-    function computeCompounding(uint8 cp, uint256 scale, uint256 interestRate, uint256 time)
+    /**
+     * @notice Calculates the compounding interest for a specified compounding period.
+     * @dev Chooses between annual and quarterly compounding based on the `cp` parameter.
+     * Reverts if an invalid compounding period is passed.
+     * @param cp The compounding period (either ANNUAL_COMPOUNDING or QUARTERLY_COMPOUNDING).
+     * @param scale The scale factor to compute the daily interest rate.
+     * @param interestRate The yearly nominal interest rate, expressed in basis points.
+     * @param time The UNIX timestamp at the time of computation.
+     * @return A tuple containing the last interest payment date, the capital, the daily interest, and the total capital.
+     */
+    function _computeCompounding(uint8 cp, uint256 scale, uint256 interestRate, uint32 time)
         internal
-        returns (uint256, uint256, uint256, uint256)
+        returns (uint32, uint256, uint256, uint256)
     {
         if (cp == ANNUAL_COMPOUNDING) {
-            return compoundAnnual(scale, interestRate, time);
+            return _compoundAnnual(scale, interestRate, time);
         } else if (cp == QUARTERLY_COMPOUNDING) {
-            return compoundQuarterly(scale, interestRate, time);
+            return _compoundQuarterly(scale, interestRate, time);
         } else {
-            revert("Invalid compounding");
+            revert("Invalid compounding period");
         }
     }
 
-    /// @notice Get the UNIX timestamp of the quarter in which the input timestamp occurs.
-    /// @param _timestamp The UNIX timestamp for which the quarter is being calculated.
-    /// @return The UNIX timestamp of the quarter.
-    function getQuarter(uint256 _timestamp) private pure returns (uint256) {
+    /**
+     * @notice Determines the UNIX timestamp of the quarter in which the given timestamp occurs.
+     * @param _timestamp The UNIX timestamp to compute the quarter for.
+     * @return The UNIX timestamp representing the beginning of the quarter.
+     */
+    function _getQuarter(uint256 _timestamp) private pure returns (uint256) {
         uint256 year = BokkyPooBahsDateTimeLibrary.getYear(_timestamp);
         uint256 q1 = BokkyPooBahsDateTimeLibrary.timestampFromDate(year, 1, 1);
         uint256 q2 = BokkyPooBahsDateTimeLibrary.timestampFromDate(year, 4, 1);
@@ -132,12 +146,14 @@ contract InterestPayments {
         return q4;
     }
 
-    /// @notice Get the UNIX timestamp of the next quarter after the input timestamp.
-    /// @param _timestamp The UNIX timestamp for which the next quarter is being calculated.
-    /// @return The UNIX timestamp of the next quarter.
-    function nextQuarter(uint256 _timestamp) private pure returns (uint256) {
-        uint256 year = BokkyPooBahsDateTimeLibrary.getYear(_timestamp);
-        uint256 month = BokkyPooBahsDateTimeLibrary.getMonth(_timestamp);
+    /**
+     * @notice Determines the UNIX timestamp of the next quarter following the given timestamp.
+     * @param timestamp The UNIX timestamp to compute the next quarter for.
+     * @return The UNIX timestamp representing the beginning of the next quarter.
+     */
+    function _nextQuarter(uint256 timestamp) public pure returns (uint256) {
+        uint256 year = BokkyPooBahsDateTimeLibrary.getYear(timestamp);
+        uint256 month = BokkyPooBahsDateTimeLibrary.getMonth(timestamp);
 
         if (month == 1) {
             return BokkyPooBahsDateTimeLibrary.timestampFromDate(year, 4, 1);
@@ -152,23 +168,27 @@ contract InterestPayments {
         }
     }
 
-    /// @notice Convert an encoded time (UNIX timestamp) into the number of days since the UNIX epoch.
-    /// @param timestamp The UNIX timestamp to be converted.
-    /// @return The number of days since the UNIX epoch.
+    /**
+     * @notice Convert a UNIX timestamp into the number of days since the UNIX epoch.
+     * @param timestamp The UNIX timestamp to be converted.
+     * @return The number of days since the UNIX epoch.
+     */
     function convertEncodedTime(uint256 timestamp) public pure returns (uint256) {
         return timestamp / (24 * 60 * 60);
     }
 
-    /// @notice Compound interest annually.
-    /// @param scale The scale factor used to calculate the daily interest rate.
-    /// @param interestRate The annual nominal interest rate, in basis points.
-    /// @param time The UNIX timestamp at which the compounding is performed.
-    /// @return A tuple containing the date of the last interest payment, the capital, the daily interest, and the total capital.
-    function compoundAnnual(uint256 scale, uint256 interestRate, uint256 time)
-        public
-        returns (uint256, uint256, uint256, uint256)
+    /**
+     * @notice Compound interest annually.
+     * @param scale The scale factor used to calculate the daily interest rate.
+     * @param interestRate The annual nominal interest rate, in basis points.
+     * @param time The UNIX timestamp at which the compounding is performed.
+     * @return A tuple containing the date of the last interest payment, the capital, the daily interest, and the total capital.
+     */
+    function _compoundAnnual(uint256 scale, uint256 interestRate, uint32 time)
+        internal
+        returns (uint32, uint256, uint256, uint256)
     {
-        (uint256 dt, uint256 capital, uint256 d, uint256 tcf) = getLastInterestEntry();
+        (uint32 dt, uint256 capital, uint256 d, uint256 tcf) = getLastInterestEntry();
         if (dt > 0) {
             uint256 od = convertEncodedTime(dt);
             uint256 nd = convertEncodedTime(time);
@@ -185,28 +205,30 @@ contract InterestPayments {
         return (dt, capital, d, tcf);
     }
 
-    /// @notice Compound interest quarterly.
-    /// @param scale The scale factor used to calculate the daily interest rate.
-    /// @param interestRate The annual nominal interest rate, in basis points.
-    /// @param time The UNIX timestamp at which the compounding is performed.
-    /// @return A tuple containing the date of the last interest payment, the capital, the daily interest, and the total capital.
-    function compoundQuarterly(uint256 scale, uint256 interestRate, uint256 time)
-        public
-        returns (uint256, uint256, uint256, uint256)
+    /**
+     * @notice Compound interest quarterly.
+     * @param scale The scale factor used to calculate the daily interest rate.
+     * @param interestRate The annual nominal interest rate, in basis points.
+     * @param time The UNIX timestamp at which the compounding is performed.
+     * @return A tuple containing the date of the last interest payment, the capital, the daily interest, and the total capital.
+     */
+    function _compoundQuarterly(uint256 scale, uint256 interestRate, uint32 time)
+        internal
+        returns (uint32, uint256, uint256, uint256)
     {
-        (uint256 dt, uint256 capital, uint256 d, uint256 tcf) = getLastInterestEntry();
+        (uint32 dt, uint256 capital, uint256 d, uint256 tcf) = getLastInterestEntry();
         if (dt > 0) {
             uint256 od = convertEncodedTime(dt);
             uint256 nd = convertEncodedTime(time);
 
             while (od < nd) {
-                od = getNextQuarter(od);
+                od = _nextQuarter(od);
                 if (od <= nd) {
                     uint256 delta = od - convertEncodedTime(dt);
                     uint256 ai = d * delta;
                     tcf = tcf + ai;
                     d = ((tcf * interestRate) / scale) / 1000;
-                    dt = convertEncodedTime(od) * (24 * 60 * 60); // Convert back to UNIX timestamp
+                    dt = uint32(convertEncodedTime(od) * (24 * 60 * 60)); // Convert back to UNIX timestamp
                     interestEntries.push(InterestEntry(dt, capital, d, tcf));
                 }
             }
@@ -215,39 +237,19 @@ contract InterestPayments {
     }
 
     /**
-     * @dev Returns the most recent interest entry.
-     *
-     * If there are no entries, it will return a tuple of four zeroes.
-     *
+     * @notice Returns the most recent interest entry.
+     *         If there are no entries, it will return a tuple of four zeroes.
      * @return time The timestamp at which the interest entry was made
      * @return capital The principal amount for the interest calculation
      * @return daily The daily interest applied to the capital
      * @return total The total accumulated interest until the entry
      */
-    function getLastInterestEntry() public view returns (uint256, uint256, uint256, uint256) {
+    function getLastInterestEntry() public view returns (uint32, uint256, uint256, uint256) {
         if (interestEntries.length == 0) {
             return (0, 0, 0, 0);
         } else {
             InterestEntry storage entry = interestEntries[interestEntries.length - 1];
             return (entry.time, entry.capital, entry.daily, entry.total);
         }
-    }
-
-    /// @notice Calculate the day of the next quarter in days since the UNIX epoch,
-    ///         given the current day in days since the UNIX epoch.
-    /// @param currentDay The current day in days since the UNIX epoch.
-    /// @return The day of the next quarter in days since the UNIX epoch.
-    function getNextQuarter(uint256 currentDay) public pure returns (uint256) {
-        uint256 currentYear = currentDay / 365;
-        uint256 currentQuarter = (currentDay % 365) / 90;
-
-        uint256 _nextQuarter = currentQuarter + 1;
-        if (_nextQuarter > 3) {
-            _nextQuarter = 0;
-            currentYear += 1;
-        }
-
-        uint256 nextQuarterDay = currentYear * 365 + _nextQuarter * 90;
-        return nextQuarterDay;
     }
 }

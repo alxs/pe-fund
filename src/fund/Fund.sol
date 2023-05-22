@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity 0.8.18;
+// https://github.com/crytic/slither/wiki/Detector-Documentation#recommendation-72
+pragma solidity 0.8.18; // do not change, see ^
 
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Pausable.sol";
 import "../interfaces/IComplianceRegistry.sol";
-import "../interfaces/ISecurityToken.sol";
-import "../securityToken/SecurityToken.sol";
+import "../interfaces/IFundToken.sol";
+import "../fund_tokens/FundToken.sol";
 import "./Expenses.sol";
 import "./Fees.sol";
 import "./CapitalCalls.sol";
@@ -16,7 +17,7 @@ import "./InterestPayments.sol";
 
 /**
  * @title Fund contract
- * @dev Extends AccessControl, ERC20Pausable, and several other contracts.
+ * @notice Extends AccessControl, ERC20Pausable, and several other contracts.
  * The contract manages the funds and permissions of users.
  */
 contract Fund is
@@ -30,28 +31,34 @@ contract Fund is
     Redemptions,
     InterestPayments
 {
+    struct Dates {
+        uint32 initialClosing;
+        uint32 finalClosing;
+        uint32 commitmentDate;
+        uint32 endDate;
+    }
+
     bytes32 public constant FUND_ADMIN = keccak256("FUND_ADMIN");
     bytes32 public constant TOKEN_ADMIN = keccak256("TOKEN_ADMIN");
 
     IComplianceRegistry public registry;
-    ISecurityToken public gpFundToken;
-    ISecurityToken public lpFundToken;
+    IFundToken public gpCommitToken;
+    IFundToken public lpCommitToken;
+    IFundToken public gpFundToken;
+    IFundToken public lpFundToken;
 
+    string public name;
     uint8 public scale;
     uint256 public size;
-    uint256 public initialClosing;
-    uint256 public finalClosing;
-    uint256 public endDate;
-    uint256 public gpClawbackPerc;
     uint256 public mgtFee;
+    Dates public dates;
 
-    uint256 public commitmentDate;
     uint256 public lpReturn;
     uint256 public gpReturn;
     uint256 public gpCatchup;
+    uint256 public gpClawbackPerc;
 
     /**
-     * @dev Constructor sets the initial properties of the contract.
      * @param registryAddress_ Address of the compliance registry contract.
      * @param initialClosing_ Initial closing time of the fund.
      * @param finalClosing_ Final closing time of the fund.
@@ -61,13 +68,13 @@ contract Fund is
      * @param blockSize_ Size of blocks for commits.
      */
     constructor(
+        string memory name_,
         address registryAddress_,
-        address tokenAdmin_,
-        uint256 initialClosing_,
-        uint256 finalClosing_,
-        uint256 endDate_,
-        uint256 commitmentDate_,
-        uint256 deploymentStart_,
+        uint32 initialClosing_,
+        uint32 finalClosing_,
+        uint32 endDate_,
+        uint32 commitmentDate_,
+        uint32 deploymentStart_,
         uint256 blockSize_,
         uint8 scale_,
         uint256 price_,
@@ -80,31 +87,46 @@ contract Fund is
         Commitments(blockSize_, price_)
         Fees(prefRate_, compoundingInterval_, gpClawback_, carriedInterest_, managementFee_)
     {
+        name = name_;
         registry = IComplianceRegistry(registryAddress_);
-        initialClosing = initialClosing_;
-        finalClosing = finalClosing_;
-        endDate = endDate_;
-        commitmentDate = commitmentDate_;
+        dates.initialClosing = initialClosing_;
+        dates.finalClosing = finalClosing_;
+        dates.commitmentDate = commitmentDate_;
+        dates.endDate = endDate_;
         deploymentStart = deploymentStart_;
         blockSize = blockSize_;
         scale = scale_;
 
+        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _setupRole(FUND_ADMIN, msg.sender);
-        _setupRole(TOKEN_ADMIN, tokenAdmin_);
+    }
+
+    function _initTokens() public onlyRole(FUND_ADMIN) {
+        require(address(gpCommitToken) == address(0), "Tokens already initialized");
+
+        gpCommitToken =
+        new FundToken(registry, msg.sender, true, string.concat(name, " - GP Commit Token"), string.concat(name, "_GPCT"));
+        gpFundToken =
+        new FundToken(registry, msg.sender, false,string.concat(name, " - GP Fund Token"), string.concat(name, "_GFT"));
+
+        lpCommitToken =
+        new FundToken(registry, msg.sender, true, string.concat(name, " - LP Commit Token"), string.concat(name, "_LPCT"));
+        lpFundToken =
+        new FundToken(registry, msg.sender, false,   string.concat(name, " - LP Fund Token"), string.concat(name, "_LFT"));
     }
 
     /**
-     * @notice Returns the LP return.
-     * @dev This function allows to get the LP return.
-     * @return lpReturn The LP return.
+     * @notice Retrieves the LP return.
+     * @return The LP return.
      */
+
     function getLpReturn() public view returns (uint256) {
         return lpReturn;
     }
 
     /**
-     * @dev Sets the LP return to the specified value.
-     * @param _value The new value for the LP return.
+     * @notice Sets the LP return to a new value.
+     * @param _value New value for the LP return.
      */
     function setLpReturn(uint256 _value) private {
         lpReturn = _value;
@@ -112,26 +134,24 @@ contract Fund is
 
     /**
      * @notice Adds the specified value to the LP return.
-     * @dev This function allows to increase the LP return.
      * @param _value The value to add to the LP return.
      */
     function addLpReturn(uint256 _value) public {
-        uint256 v = lpReturn + _value; // This will automatically revert on overflow
-        setLpReturn(v);
+        uint256 newValue = lpReturn + _value;
+        setLpReturn(newValue);
     }
 
     /**
-     * @notice Returns the GP return.
-     * @dev This function allows to get the GP return.
-     * @return gpReturn The GP return.
+     * @notice Retrieves the GP return.
+     * @return The GP return.
      */
     function getGpReturn() public view returns (uint256) {
         return gpReturn;
     }
 
     /**
-     * @dev Sets the GP return to the specified value.
-     * @param _value The new value for the GP return.
+     * @dev Sets the GP return to a new value.
+     * @param _value New value for the GP return.
      */
     function setGpReturn(uint256 _value) private {
         gpReturn = _value;
@@ -139,7 +159,6 @@ contract Fund is
 
     /**
      * @notice Adds the specified value to the GP return.
-     * @dev This function allows to increase the GP return.
      * @param _value The value to add to the GP return.
      */
     function addGpReturn(uint256 _value) public {
@@ -148,16 +167,7 @@ contract Fund is
     }
 
     /**
-     * @notice Returns the GP catchup.
-     * @dev This function allows to get the GP catchup.
-     * @return gpCatchup The GP catchup.
-     */
-    function getGpCatchup() public view returns (uint256) {
-        return gpCatchup;
-    }
-
-    /**
-     * @dev Sets the GP catchup to the specified value.
+     * @notice Sets the GP catchup to the specified value.
      * @param _value The new value for the GP catchup.
      */
     function setGpCatchup(uint256 _value) private {
@@ -166,10 +176,9 @@ contract Fund is
 
     /**
      * @notice Adds the specified value to the GP catchup.
-     * @dev This function allows to increase the GP catchup.
      * @param _value The value to add to the GP catchup.
      */
-    function addGpCatchup(uint256 _value) public {
+    function addGpCatchup(uint256 _value) public onlyRole(FUND_ADMIN) {
         uint256 catchup = gpCatchup + _value; // This will automatically revert on overflow
         setGpCatchup(catchup);
     }
@@ -180,8 +189,8 @@ contract Fund is
      * @param _initialClosing The new initial closing time.
      */
 
-    function setInitialClosing(uint256 _initialClosing) public onlyRole(FUND_ADMIN) {
-        initialClosing = _initialClosing;
+    function setInitialClosing(uint32 _initialClosing) public onlyRole(FUND_ADMIN) {
+        dates.initialClosing = _initialClosing;
     }
 
     /**
@@ -189,8 +198,8 @@ contract Fund is
      * @dev Can only be called by an account with the FUND_ADMIN role.
      * @param _finalClosing The new final closing time.
      */
-    function setFinalClosing(uint256 _finalClosing) public onlyRole(FUND_ADMIN) {
-        finalClosing = _finalClosing;
+    function setFinalClosing(uint32 _finalClosing) public onlyRole(FUND_ADMIN) {
+        dates.finalClosing = _finalClosing;
     }
 
     /**
@@ -198,8 +207,8 @@ contract Fund is
      * @dev Can only be called by an account with the FUND_ADMIN role.
      * @param _endDate The new end date.
      */
-    function setEndDate(uint256 _endDate) public onlyRole(FUND_ADMIN) {
-        endDate = _endDate;
+    function setEndDate(uint32 _endDate) public onlyRole(FUND_ADMIN) {
+        dates.endDate = _endDate;
     }
 
     /**
@@ -207,8 +216,8 @@ contract Fund is
      * @dev Can only be called by an account with the FUND_ADMIN role.
      * @param _commitmentDate The new commitment date.
      */
-    function setCommitmentDate(uint256 _commitmentDate) public onlyRole(FUND_ADMIN) {
-        commitmentDate = _commitmentDate;
+    function setCommitmentDate(uint32 _commitmentDate) public onlyRole(FUND_ADMIN) {
+        dates.commitmentDate = _commitmentDate;
     }
 
     /**
@@ -221,15 +230,14 @@ contract Fund is
     }
 
     /**
-     * @notice Allows a user to commit funds to the contract.
+     * @notice Allows to commit LP funds to the contract.
      * @dev The user must be compliant and the commit size must be valid.
      * @param account The address of the user committing the funds.
      * @param amount The amount of funds to commit.
      * @param time The time of the commit.
      */
-    function commit(address account, uint256 amount, uint256 time) public {
-        // @todo these are only implemented for LPs
-        require(time <= finalClosing, "Too late to commit");
+    function commit(address account, uint256 amount, uint256 time) public onlyRole(FUND_ADMIN) {
+        require(time <= dates.finalClosing, "Too late to commit");
         // Ensure user can commit
         require(registry.isCompliant(account), "Account is not compliant");
 
@@ -238,7 +246,7 @@ contract Fund is
         require(amount % blockSize == 0, "Invalid commit size");
 
         // Finally add this..
-        addLpCommitment(account, amount, time);
+        _addLpCommitment(account, amount, time);
     }
 
     /**
@@ -247,8 +255,8 @@ contract Fund is
      * @param account The address of the user cancelling the commit.
      * @param time The time of the commit to cancel.
      */
-    function cancelCommit(address account, uint256 time) public {
-        cancelLpCommitment(account, time);
+    function cancelCommit(address account, uint256 time) public onlyRole(FUND_ADMIN) {
+        _cancelLpCommitment(account, time);
     }
 
     /**
@@ -258,37 +266,40 @@ contract Fund is
      * @param amount The amount of the commit token to issue.
      * @param time The time of the commit.
      */
-    function issueGpCommit(address account, uint256 amount, uint256 time) public {
-        addGpCommitment(account, amount, time);
+    function issueGpCommit(address account, uint256 amount, uint256 time) public onlyRole(FUND_ADMIN) {
+        _addGpCommitment(account, amount, time);
 
-        // Assuming that the contract has the MINTER_ROLE of the gpCommitToken
-        // @todo implement appropriate access control checks here
         gpCommitToken.mint(account, amount);
     }
 
     /**
      * @notice Executes a capital call to draw down committed capital from LPs and GPs.
-     * @dev Only accounts with the FUND_ADMIN role can call this function.
-     *      The function computes the scaled share for each LP and GP based on their commitments,
-     *      and then adds the capital call to their account. Inflows are also added.
-     * @param amount The amount of capital to be called.
-     * @param drawdownType A string describing the type of drawdown.
-     * @param time The timestamp when the capital call is made.
+     * @dev Computes and assigns the scaled share of the capital call to each LP and GP.
+     *      Ensures the requested amount is less than or equal to the remaining committed capital.
+     *      Only accounts with the FUND_ADMIN role can call this function.
+     * @param amount The amount of capital to be called in wei.
+     * @param drawdownType Describes the type of drawdown.
+     * @param time The timestamp of the capital call.
      */
-    function capitalCall(uint256 amount, string memory drawdownType, uint256 time) public onlyRole(FUND_ADMIN) {
-        // Check if there is enough committed capital
+    function capitalCall(uint256 amount, string memory drawdownType, uint32 time)
+        public
+        onlyRole(FUND_ADMIN)
+        returns (uint256 callId)
+    {
+        // Validate the amount against remaining committed capital
         uint256 totalCommitted = totalCommittedLp + totalCommittedGp;
         uint256 left = totalCommitted - totalCalled;
         require(left >= amount, "FundError: Insufficient Commits");
 
         // Record the capital call
-        uint256 callId = addCapitalCall(amount, drawdownType, time, gpFundToken, lpFundToken);
+        callId = addCapitalCall(amount, drawdownType, time);
 
+        // Scale the requested amount to share among LPs and GPs
         uint256 scaledAmount = amount * scale;
-
         require(scaledAmount / totalCommitted > 0, "FundError: Scale Overflow");
         uint256 scaledShare = scaledAmount / totalCommitted;
 
+        // Compute and assign the share for each GP
         for (uint256 i = 0; i < gpAccounts.length; i++) {
             Commit memory gpCommit = gpCommitments[gpAccounts[i]];
             uint256 ss = scaledShare * gpCommit.amount;
@@ -298,7 +309,7 @@ contract Fund is
             addAccountCapitalCall(callId, gpAccounts[i], share, AccountType.GP);
         }
 
-        // And for each LP
+        // Compute and assign the share for each LP
         for (uint256 i = 0; i < lpAccounts.length; i++) {
             Commit memory lpCommit = lpCommitments[lpAccounts[i]];
             uint256 ss = scaledShare * lpCommit.amount;
@@ -306,74 +317,63 @@ contract Fund is
             uint256 share = ss / scale;
             require(share != 0, "FundError: Invalid Share");
 
-            addAccountCapitalCall(callId, gpAccounts[i], share, AccountType.GP);
+            addAccountCapitalCall(callId, lpAccounts[i], share, AccountType.LP);
         }
 
-        // Update the total capital called
+        // Update the total amount called
         totalCalled += amount;
 
         // Record the capital inflow
-        addInflow(amount, scale, prefRate, time, compoundingInterval);
+        _addInflow(amount, scale, prefRate, time, compoundingInterval);
     }
 
     /**
      * @notice Triggers the charge of the management fee.
-     * @dev Only accounts with the FUND_ADMIN role can call this function.
-     *      The function records the fee request and then charges the management fee
-     *      for all the LP contracts in the fund.
+     * @dev Records the fee request and charges the management fee for all LP contracts.
+     *      Only accounts with the FUND_ADMIN role can call this function.
      */
     function chargeManagementFee() public onlyRole(FUND_ADMIN) {
-        // Capture the current block timestamp
+        // Record the current block timestamp
         uint256 time = block.timestamp;
 
-        // Record the fee request and get the request ID
+        // Record the fee request
         uint256 id = addFeeRequest(managementFee, time);
 
-        // Retrieve all the LP contracts associated with the fund
-        ISecurityToken[] memory contracts = getFundContracts();
-
-        // Charge the management fee for each LP contract
-        // @todo why are there more than 2 LP contracts?
-        for (uint256 i = 0; i < contracts.length; i++) {
-            // Each contract will handle the fee charge internally
-            contracts[i].chargeManagementFee(managementFee, id, price, time);
-        }
+        // Trigger the charge of the management fee
+        lpCommitToken.chargeManagementFee(managementFee, id, price, time);
     }
 
     /**
      * @notice Distributes the funds among the fund stakeholders.
-     * @dev This function calculates the distribution amounts for both GP and LP,
-     *      taking carried interest into consideration. After the calculations,
-     *      the distributions are processed accordingly. Only accounts with the
-     *      FUND_ADMIN role can call this function.
-     * @param amount The total amount to distribute.
-     * @param distributionType The type of distribution.
-     * @param time The timestamp when the distribution is made.
+     * @dev Calculates the distribution amounts considering carried interest, then processes them.
+     *      The function handles distributions in cases where the distribution amount is less than,
+     *      equal to, or greater than the GP's catch-up.
+     *      Only accounts with the FUND_ADMIN role can call this function.
+     * @param amount The total amount to distribute in wei.
+     * @param distributionType Describes the type of distribution.
+     * @param time The timestamp of the distribution.
      */
-    function distribute(uint256 amount, string calldata distributionType, uint256 time) public onlyRole(FUND_ADMIN) {
-        // Record the distribution and get the distribution ID
+    function distribute(uint256 amount, string calldata distributionType, uint32 time) public onlyRole(FUND_ADMIN) {
+        // Record the distribution and update total distribution
         uint32 distId = addDistribution(amount, distributionType, time);
-
-        // Calculate the new total distribution amount
         uint256 newTotal = totalDistribution + amount;
         setTotalDistribution(newTotal);
 
+        // Set carried interest
         uint256 carry = carriedInterest;
 
-        // Calculate the distribution amount, capital paid, and interest paid
+        // Calculate distribution amounts and update the distribution info
         (uint256 distributionAmount, uint256 capitalPaid, uint256 interestPaid) =
-            addOutflow(amount, scale, getPrefRate(), time, getCompoundingInterval());
+            _addOutflow(amount, scale, getPrefRate(), time, getCompoundingInterval());
 
+        // Compute LP's distribution and update GP's catchup if interest is paid
         uint256 lpDist = capitalPaid + interestPaid;
-
-        // If there's any interest paid, add it to GP's catchup
         if (interestPaid > 0) {
             addGpCatchup((interestPaid * carry) / 1000);
         }
 
-        uint256 totalCatchup = getGpCatchup();
-
-        // If the distribution amount is less than or equal to total catchup, process the distributions
+        // Get total catchup and process the distributions if distribution amount is less or equal to total catchup
+        uint256 totalCatchup = gpCatchup;
         if (distributionAmount <= totalCatchup) {
             if (lpDist > 0) {
                 processDistribution(lpFundToken, distributionType, time, distId, lpDist, scale);
@@ -388,20 +388,17 @@ contract Fund is
             return;
         }
 
+        // Calculate GP's distribution and adjust distribution amount and GP catchup
         uint256 gpDist = totalCatchup;
-
-        // Adjust the distribution amount and GP catchup
         if (totalCatchup > 0) {
             setGpCatchup(0);
             distributionAmount -= totalCatchup;
         }
 
-        // Calculate GP's and LP's distribution amounts
+        // Calculate final distribution amounts and process them
         uint256 gpSplit = (distributionAmount * carry) / 1000;
         gpDist += gpSplit;
         lpDist += distributionAmount - gpSplit;
-
-        // Process the distributions and update returns
         if (gpDist > 0) {
             processDistribution(gpFundToken, distributionType, time, distId, gpDist, scale);
             addGpReturn(gpDist);
@@ -413,16 +410,19 @@ contract Fund is
         }
     }
 
-    /// @notice Redeem tokens for the specified account
-    /// @dev Adds a redemption request after checking if the account is compliant
-    /// @param account The address of the account requesting the redemption
-    /// @param amount The amount of tokens to be redeemed
-    /// @param time The timestamp when the redemption request was made
+    /**
+     * @notice Allows an account to redeem tokens.
+     * @dev Checks if the account is compliant and adds a redemption request.
+     *      The function does not execute the redemption.
+     * @param account The address of the account requesting the redemption.
+     * @param amount The amount of tokens to be redeemed in wei.
+     * @param time The timestamp of the redemption request.
+     */
     function redeem(address account, uint256 amount, uint256 time) public {
-        // Ensure user can commit
+        // Validate the compliance of the account
         require(registry.isCompliant(account), "Account is not compliant");
 
-        // Add redemption request
+        // Add the redemption request
         addRedemption(account, amount, time);
     }
 

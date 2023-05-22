@@ -2,43 +2,41 @@
 pragma solidity 0.8.18;
 
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
-import "../interfaces/ISecurityToken.sol";
+import "../interfaces/IFundToken.sol";
 
 /**
  * @title Commitments
- * @dev This contract implements a functionality similar to the given Rust smart contract.
+ * @notice Implements a commitment functionality similar to a specified Rust smart contract.
  */
 contract Commitments {
-    // Struct to store commitment data
+    // Structure to store commitment data.
     struct Commit {
         uint256 amount;
         uint256 timestamp;
         uint8 status;
     }
 
-    // Constants
+    // Define constants for different commitment statuses.
     uint8 constant COMMIT_PENDING = 0x01;
     uint8 constant COMMIT_APPROVED = 0x02;
     uint8 constant COMMIT_CANCELLED = 0x04;
     uint8 constant COMMIT_REJECTED = 0x08;
     uint8 constant COMMIT_BLOCKED = 0x10;
 
-    // Variables
+    // Declare public state variables.
     uint256 public totalInterest;
     uint256 public totalCommittedGp;
     uint256 public totalCommittedLp;
     uint256 public blockSize;
     uint256 public price;
 
-    ISecurityToken public gpCommitToken;
-    ISecurityToken public lpCommitToken;
-    // Commitments mapping
+    // Mapping to track commitments from addresses.
     mapping(address => Commit) public lpCommitments;
     address[] public gpAccounts;
     mapping(address => Commit) public gpCommitments;
     address[] public lpAccounts;
 
-    // Events
+    // Event declarations.
     event LpCommitmentAdded(address indexed account, uint256 amount, uint256 timestamp);
     event GpCommitmentAdded(address indexed account, uint256 amount, uint256 timestamp);
     event LpCommitmentCancelled(address indexed account, uint256 timestamp);
@@ -46,13 +44,13 @@ contract Commitments {
     event LpCommitmentRejected(address indexed account, uint256 timestamp);
 
     /**
-     * @dev Constructor sets the initial values.
-     * @param _blockSize The initial block size.
-     * @param _price The initial price.
+     * @dev Sets initial values for block size and price.
+     * @param blockSize_ Initial block size.
+     * @param price_ Initial price.
      */
-    constructor(uint256 _blockSize, uint256 _price) {
-        blockSize = _blockSize;
-        price = _price;
+    constructor(uint256 blockSize_, uint256 price_) {
+        blockSize = blockSize_;
+        price = price_;
         totalInterest = 0;
         totalCommittedGp = 0;
         totalCommittedLp = 0;
@@ -89,93 +87,93 @@ contract Commitments {
     function getTotalCommittedLP() external view returns (uint256) {
         return totalCommittedLp;
     }
-    /**
-     * @dev Adds a GP commitment.
-     * @param _account The address of the account.
-     * @param _amount The amount of the commitment.
-     * @param _time The timestamp of the commitment.
-     */
 
-    function addGpCommitment(address _account, uint256 _amount, uint256 _time) internal {
-        totalCommittedGp = totalCommittedGp + _amount;
-        gpCommitments[_account] = Commit(_amount, _time, COMMIT_APPROVED);
-        gpAccounts.push(_account);
-        emit GpCommitmentAdded(_account, _amount, _time);
+    /**
+     * @dev Adds a new GP commitment.
+     * @param account Address of the account.
+     * @param amount Commitment amount.
+     * @param time Commitment timestamp.
+     */
+    function _addGpCommitment(address account, uint256 amount, uint256 time) internal {
+        totalCommittedGp += amount;
+        gpCommitments[account] = Commit(amount, time, COMMIT_APPROVED);
+        gpAccounts.push(account);
+        emit GpCommitmentAdded(account, amount, time);
     }
 
     /**
-     * @dev Adds an LP commitment.
-     * @param _account The address of the account.
-     * @param _amount The amount of the commitment.
-     * @param _time The timestamp of the commitment.
+     * @dev Adds a new LP commitment.
+     * @param account Address of the account.
+     * @param amount Commitment amount.
+     * @param time Commitment timestamp.
      */
-    function addLpCommitment(address _account, uint256 _amount, uint256 _time) internal {
-        Commit storage commit = lpCommitments[_account];
+    function _addLpCommitment(address account, uint256 amount, uint256 time) internal {
+        Commit storage commit = lpCommitments[account];
         if (commit.status != 0 && commit.status != COMMIT_BLOCKED) {
-            totalInterest = totalInterest - commit.amount;
+            totalInterest -= commit.amount;
         }
 
         if (commit.status == 0) {
-            lpCommitments[_account] = Commit(_amount, _time, COMMIT_PENDING);
-            lpAccounts.push(_account);
+            lpCommitments[account] = Commit(amount, time, COMMIT_PENDING);
+            lpAccounts.push(account);
         } else {
-            commit.amount = _amount;
-            commit.timestamp = _time;
+            commit.amount = amount;
+            commit.timestamp = time;
             commit.status = COMMIT_PENDING;
         }
 
-        totalInterest = totalInterest + _amount;
-        emit LpCommitmentAdded(_account, _amount, _time);
+        totalInterest += amount;
+        emit LpCommitmentAdded(account, amount, time);
     }
 
     /**
-     * @dev Cancels an LP commitment.
-     * @param _account The address of the account.
-     * @param _time The timestamp of the cancellation.
+     * @dev Cancels an existing LP commitment.
+     * @param account Address of the account.
+     * @param time Cancellation timestamp.
      */
-    function cancelLpCommitment(address _account, uint256 _time) internal {
-        Commit storage commit = lpCommitments[_account];
+    function _cancelLpCommitment(address account, uint256 time) internal {
+        Commit storage commit = lpCommitments[account];
         require(commit.status & COMMIT_PENDING == COMMIT_PENDING, "Too late to cancel");
 
-        commit.timestamp = _time;
+        commit.timestamp = time;
         commit.status = COMMIT_CANCELLED;
 
-        totalInterest = totalInterest - commit.amount;
-        emit LpCommitmentCancelled(_account, _time);
+        totalInterest -= commit.amount;
+        emit LpCommitmentCancelled(account, time);
     }
 
     /**
-     * @dev Approves LP commitments.
-     * @param _accounts The addresses of the accounts to approve.
-     * @param _time The timestamp of the approval.
+     * @dev Approves multiple LP commitments.
+     * @param accounts Array of account addresses to approve.
+     * @param time Approval timestamp.
      */
-    function approveLpCommitments(address[] calldata _accounts, uint256 _time) internal {
-        for (uint256 i = 0; i < _accounts.length; i++) {
-            Commit storage commit = lpCommitments[_accounts[i]];
+    function _approveLpCommitments(address[] calldata accounts, uint256 time, IFundToken lpCommitToken) internal {
+        for (uint256 i = 0; i < accounts.length; i++) {
+            Commit storage commit = lpCommitments[accounts[i]];
             require(commit.status & COMMIT_PENDING == COMMIT_PENDING, "Commit not allowed");
 
-            commit.timestamp = _time;
+            commit.timestamp = time;
             commit.status = COMMIT_APPROVED;
 
-            totalCommittedLp = totalCommittedLp + commit.amount;
-            lpCommitToken.mint(_accounts[i], commit.amount / price);
-            emit LpCommitmentApproved(_accounts[i], commit.amount, _time);
+            totalCommittedLp += commit.amount;
+            lpCommitToken.mint(accounts[i], commit.amount / price);
+            emit LpCommitmentApproved(accounts[i], commit.amount, time);
         }
     }
 
     /**
-     * @dev Rejects LP commitments.
-     * @param _accounts The addresses of the accounts to reject.
-     * @param _time The timestamp of the rejection.
+     * @dev Rejects multiple LP commitments.
+     * @param accounts Array of account addresses to reject.
+     * @param time Rejection timestamp.
      */
-    function rejectLpCommitments(address[] calldata _accounts, uint256 _time) internal {
-        for (uint256 i = 0; i < _accounts.length; i++) {
-            Commit storage commit = lpCommitments[_accounts[i]];
+    function _rejectLpCommitments(address[] calldata accounts, uint256 time) internal {
+        for (uint256 i = 0; i < accounts.length; i++) {
+            Commit storage commit = lpCommitments[accounts[i]];
             require(commit.status & COMMIT_PENDING == COMMIT_PENDING, "Commit not allowed");
 
-            commit.timestamp = _time;
+            commit.timestamp = time;
             commit.status = COMMIT_REJECTED;
-            emit LpCommitmentRejected(_accounts[i], _time);
+            emit LpCommitmentRejected(accounts[i], time);
         }
     }
 }

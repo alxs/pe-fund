@@ -5,33 +5,42 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 
 /**
  * @title ComplianceRegistry Contract
- * @notice This contract manages KYC and compliance traits for accounts
- * @author alxs
+ * @notice Manages the Know Your Customer (KYC) and Anti-Money Laundering (AML) compliance status for user accounts.
  */
 contract ComplianceRegistry is AccessControl {
+    // Compliance statuses
     enum Status {
         NonCompliant,
         Compliant
     }
 
+    // KYC status includes start time, expiry time, and compliance status
     struct KycStatus {
         uint256 startTime;
         uint256 expiryTime;
         Status status;
     }
 
+    // AML status includes start time, expiry time, and compliance status
     struct AmlStatus {
         uint256 startTime;
         uint256 expiryTime;
         Status status;
     }
 
+    // Role identifiers for KYC and AML administrators
     bytes32 public constant AML_ADMIN = keccak256("AML_ADMIN");
     bytes32 public constant KYC_ADMIN = keccak256("KYC_ADMIN");
 
+    // Mappings to store the KYC and AML statuses of user accounts
     mapping(address => KycStatus) private kycStatuses;
     mapping(address => AmlStatus) private amlStatuses;
 
+    /**
+     * @notice Assigns roles on contract deployment
+     * @param _kycAdmin The address to assign the KYC_ADMIN role
+     * @param _complianceAdmin The address to assign the AML_ADMIN role
+     */
     constructor(address _kycAdmin, address _complianceAdmin) {
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _setupRole(KYC_ADMIN, _kycAdmin);
@@ -41,18 +50,18 @@ contract ComplianceRegistry is AccessControl {
     /* ========== VIEW FUNCTIONS ========== */
 
     /**
-     * @notice Checks if an account is both KYC'd and AML compliant
-     * @param account The address of the account
-     * @return True if the account is KYC'd and AML compliant, false otherwise
+     * @notice Determines if a user account is compliant with both KYC and AML requirements.
+     * @param account The address of the user account
+     * @return True if the user account is KYC and AML compliant, false otherwise
      */
     function isCompliant(address account) public view returns (bool) {
         return isKycCompliant(account) && isAmlCompliant(account);
     }
 
     /**
-     * @notice Checks if an account is KYC compliant
-     * @param account The address of the account
-     * @return True if the account is KYC compliant, false otherwise
+     * @notice Determines if a user account is KYC compliant.
+     * @param account The address of the user account
+     * @return True if the user account is KYC compliant, false otherwise
      */
     function isKycCompliant(address account) public view returns (bool) {
         KycStatus memory status = kycStatuses[account];
@@ -60,9 +69,9 @@ contract ComplianceRegistry is AccessControl {
     }
 
     /**
-     * @notice Checks if an account is AML compliant
-     * @param account The address of the account
-     * @return True if the account is compliant, false otherwise
+     * @notice Determines if a user account is AML compliant.
+     * @param account The address of the user account
+     * @return True if the user account is AML compliant, false otherwise
      */
     function isAmlCompliant(address account) public view returns (bool) {
         AmlStatus memory status = amlStatuses[account];
@@ -71,29 +80,35 @@ contract ComplianceRegistry is AccessControl {
 
     /* ========== RESTRICTED KYC FUNCTIONS ========== */
 
-    /// @notice Set the KYC status for an account if it hasn't been set yet
-    /// @dev Can only be called by an account with the KYC_ADMIN role
-    /// @param account The account for which to set the KYC status
-    /// @param expiryTime The time at which the KYC status expires
-    /// @param status The KYC status to set
+    /**
+     * @notice Sets the KYC status for a user account if it has not been set before.
+     * @dev Accessible only by an account with the KYC_ADMIN role.
+     * @param account The address of the user account
+     *
+     * @param expiryTime The timestamp when the KYC status expires
+     * @param status The KYC compliance status to set
+     */
     function setKycStatus(address account, uint256 expiryTime, Status status) public onlyRole(KYC_ADMIN) {
         require(kycStatuses[account].expiryTime == 0, "KYC status already set");
         kycStatuses[account] = KycStatus(block.timestamp, expiryTime, status);
     }
 
-    /// @notice Update the KYC status for an account
-    /// @dev Can only be called by an account with the KYC_ADMIN role
-    /// @param account The account for which to update the KYC status
-    /// @param expiryTime The time at which the KYC status expires
-    /// @param status The KYC status to set
+    /**
+     * @notice Updates the KYC status for a user account.
+     * @dev Accessible only by an account with the KYC_ADMIN role.
+     * @param account The address of the user account
+     * @param expiryTime The timestamp when the KYC status expires
+     * @param status The updated KYC compliance status
+     */
     function updateKycStatus(address account, uint256 expiryTime, Status status) public onlyRole(KYC_ADMIN) {
         require(kycStatuses[account].expiryTime != 0, "KYC status not set yet");
         kycStatuses[account] = KycStatus(block.timestamp, expiryTime, status);
     }
 
     /**
-     * @notice Clear KYC status for an account
-     * @param account The address of the account
+     * @notice Clears the KYC status for a user account.
+     * @dev Accessible only by an account with the KYC_ADMIN role.
+     * @param account The address of the user account
      */
     function clearKycStatus(address account) public onlyRole(KYC_ADMIN) {
         delete kycStatuses[account];
@@ -101,29 +116,34 @@ contract ComplianceRegistry is AccessControl {
 
     /* ========== RESTRICTED AML FUNCTIONS ========== */
 
-    /// @notice Set the AML status for an account if it hasn't been set yet
-    /// @dev Can only be called by an account with the AML_ADMIN role
-    /// @param account The account for which to set the AML status
-    /// @param expiryTime The time at which the AML status expires
-    /// @param status The AML status to set
+    /**
+     * @notice Sets the AML status for a user account if it has not been set before.
+     * @dev Accessible only by an account with the AML_ADMIN role.
+     * @param account The address of the user account
+     * @param expiryTime The timestamp when the AML status expires
+     * @param status The AML compliance status to set
+     */
     function setAmlStatus(address account, uint256 expiryTime, Status status) public onlyRole(AML_ADMIN) {
-        require(amlStatuses[account].expiryTime == 0, "Compliance status already set");
-        amlStatuses[account] = AmlStatus(block.timestamp, expiryTime, status);
-    }
-
-    /// @notice Update the AML status for an account
-    /// @dev Can only be called by an account with the AML_ADMIN role
-    /// @param account The account for which to update the AML status
-    /// @param expiryTime The time at which the AML status expires
-    /// @param status The AML status to set
-    function updateAmlStatus(address account, uint256 expiryTime, Status status) public onlyRole(AML_ADMIN) {
-        require(amlStatuses[account].expiryTime != 0, "Compliance status not set yet");
+        require(amlStatuses[account].expiryTime == 0, "AML status already set");
         amlStatuses[account] = AmlStatus(block.timestamp, expiryTime, status);
     }
 
     /**
-     * @notice Clear AML status for an account
-     * @param account The address of the account
+     * @notice Updates the AML status for a user account.
+     * @dev Accessible only by an account with the AML_ADMIN role.
+     * @param account The address of the user account
+     * @param expiryTime The timestamp when the AML status expires
+     * @param status The updated AML compliance status
+     */
+    function updateAmlStatus(address account, uint256 expiryTime, Status status) public onlyRole(AML_ADMIN) {
+        require(amlStatuses[account].expiryTime != 0, "AML status not set yet");
+        amlStatuses[account] = AmlStatus(block.timestamp, expiryTime, status);
+    }
+
+    /**
+     * @notice Clears the AML status for a user account.
+     * @dev Accessible only by an account with the AML_ADMIN role.
+     * @param account The address of the user account
      */
     function clearAmlStatus(address account) public onlyRole(AML_ADMIN) {
         delete amlStatuses[account];
@@ -131,6 +151,9 @@ contract ComplianceRegistry is AccessControl {
 
     /* ========== EVENTS ========== */
 
+    // Emitted when the KYC status of an account has been updated
     event KYCStatusUpdated(address indexed account, bool status, uint64 expiry);
+
+    // Emitted when the AML status of an account has been updated
     event AmlStatusUpdated(address indexed account, bool status, uint64 expiry);
 }

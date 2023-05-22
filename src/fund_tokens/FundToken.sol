@@ -1,40 +1,31 @@
 // SPDX-License-Identifier: UNLICENSED
-// https://github.com/crytic/slither/wiki/Detector-Documentation#recommendation-72
-pragma solidity 0.8.18; // do not change, see ^
+pragma solidity 0.8.18;
 
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Pausable.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "../interfaces/IComplianceRegistry.sol";
-import "../interfaces/ISecurityToken.sol";
+import "../interfaces/IFundToken.sol";
 import "./DistributionManager.sol";
 import "./FeeManager.sol";
 
 /**
- * @title SecurityToken
+ * @title FundToken
  *
  * @notice A token contract for managing an asset with dividends and fees.
  *
  * The contract inherits from several libraries from OpenZeppelin,
  * as well as from two local contracts: DistributionManager and FeeManager.
  *
- * The SecurityToken contract itself implements a security token that has the capability to pause,
+ * The FundToken contract itself implements a security token that has the capability to pause,
  * manage roles, mint, burn, and distribute tokens. It can also charge management fees.
  */
-contract SecurityToken is
-    ISecurityToken,
-    ERC20Pausable,
-    AccessControl,
-    ReentrancyGuard,
-    DistributionManager,
-    FeeManager
-{
+contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard, DistributionManager, FeeManager {
     IComplianceRegistry public complianceRegistry;
 
     // Constants representing the different roles within the system
     bytes32 public constant FUND_ADMIN = keccak256("FUND_ADMIN");
     bytes32 public constant TOKEN_ADMIN = keccak256("TOKEN_ADMIN");
-    bytes32 public constant DISTRIBUTOR = keccak256("DISTRIBUTOR");
 
     // Mappings for storing account related data
     mapping(address => uint256) private lastDistributionIndex;
@@ -50,33 +41,57 @@ contract SecurityToken is
     }
 
     /**
-     * @notice Constructs the SecurityToken contract.
+     * @notice Constructs the FundToken contract.
      *
      * @param complianceRegistry_ The address of the Compliance Registry contract
      * @param fundAdmin_ The address of the Fund Administrator
-     * @param tokenAdmin_ The address of the Token Administrator
-     * @param distributor_ The address of the Distributor
      * @param isCommitToken_ A boolean indicating whether this is a Commit Token
      * @param name_ The name of the token
      * @param symbol_ The symbol of the token
      */
     constructor(
-        address complianceRegistry_,
+        IComplianceRegistry complianceRegistry_,
         address fundAdmin_,
-        address tokenAdmin_,
-        address distributor_,
         bool isCommitToken_,
         string memory name_,
         string memory symbol_
     ) ERC20(name_, symbol_) {
-        complianceRegistry = IComplianceRegistry(complianceRegistry_);
+        complianceRegistry = complianceRegistry_;
         isCommitToken = isCommitToken_;
 
-        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _setupRole(DEFAULT_ADMIN_ROLE, fundAdmin_);
         _setupRole(FUND_ADMIN, fundAdmin_);
-        _setupRole(TOKEN_ADMIN, tokenAdmin_);
-        _setupRole(DISTRIBUTOR, distributor_);
+        _setupRole(TOKEN_ADMIN, msg.sender); // Fund contract
     }
+
+    /* ========== VIEW FUNCTIONS ========== */
+
+    /**
+     * @dev Calculates the total unpaid fee balance for an account.
+     * @param account Account to calculate the balance for.
+     */
+    function feeBalance(address account) public view returns (uint256) {
+        uint256 totalFees = 0;
+        for (uint256 i = lastFeeIndex[account]; i < fees.length; i++) {
+            totalFees += calculateFee(account, i);
+        }
+        return totalFees;
+    }
+
+    /**
+     * @dev Calculate fee amount for a specific feeId for an account.
+     * @param account Account to calculate the fee for.
+     * @param feeId ID of the fee to calculate.
+     */
+    function calculateFee(address account, uint256 feeId) public view returns (uint256) {
+        Fee memory fee = fees[feeId];
+        uint256 snapshotBalance = snapshotBalances[account][feeId];
+        uint256 charge = fee.fee * snapshotBalance / fee.price; // Adjusted for the updated fee calculation
+
+        return charge;
+    }
+
+    /* ========== RESTRICTED ========== */
 
     /**
      * @notice Mints new tokens and adds them to the recipient's balance.
@@ -92,6 +107,7 @@ contract SecurityToken is
 
         _mint(recipient, amount);
     }
+
     /**
      * @notice Burns tokens from a specific account.
      *
@@ -155,7 +171,7 @@ contract SecurityToken is
      */
     function distribute(uint32 distId, string memory distType, uint256 time, uint256 amount, uint256 scale)
         public
-        onlyRole(DISTRIBUTOR)
+        onlyRole(TOKEN_ADMIN)
     {
         require(!isCommitToken, "This operation is not supported for commit tokens");
 
@@ -225,30 +241,5 @@ contract SecurityToken is
             snapshotBalances[account][currentFeeSnapshotIndex] = balance;
             lastFeeIndex[account] = currentFeeSnapshotIndex;
         }
-    }
-
-    /**
-     * @dev Calculates the total unpaid fee balance for an account.
-     * @param account Account to calculate the balance for.
-     */
-    function feeBalance(address account) public view returns (uint256) {
-        uint256 totalFees = 0;
-        for (uint256 i = lastFeeIndex[account]; i < fees.length; i++) {
-            totalFees += calculateFee(account, i);
-        }
-        return totalFees;
-    }
-
-    /**
-     * @dev Calculate fee amount for a specific feeId for an account.
-     * @param account Account to calculate the fee for.
-     * @param feeId ID of the fee to calculate.
-     */
-    function calculateFee(address account, uint256 feeId) public view returns (uint256) {
-        Fee memory fee = fees[feeId];
-        uint256 snapshotBalance = snapshotBalances[account][feeId];
-        uint256 charge = fee.fee * snapshotBalance / fee.price; // Adjusted for the updated fee calculation
-
-        return charge;
     }
 }
