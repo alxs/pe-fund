@@ -17,7 +17,7 @@ contract Fees {
     // Structure to hold the fee request details
     struct FeeRequest {
         uint8 fee;
-        uint64 time;
+        uint256 time;
     }
 
     // Array to store the history of fee requests
@@ -115,9 +115,9 @@ contract Fees {
      * @param time The time of the fee request
      * @return count The current count of fee requests after the new addition
      */
-    function addFeeRequest(uint8 fee, uint64 time) internal returns (uint256 count) {
-        FeeRequest memory newFeeRequest = FeeRequest({fee: fee, time: time});
+    function addFeeRequest(uint8 fee, uint256 time) internal returns (uint256 count) {
+        FeeRequest memory newFeeRequest = FeeRequest(fee, time);
         feeHistory.push(newFeeRequest);
-        return feeHistory.length;
+        return feeHistory.length - 1;
     }
 }

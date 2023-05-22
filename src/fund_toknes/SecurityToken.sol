@@ -44,6 +44,11 @@ contract SecurityToken is
     // Boolean indicating whether or not this is a CommitToken
     bool public isCommitToken;
 
+    modifier noPendingFees(address account) {
+        require(feeBalance(account) == 0, "Account has pending fees");
+        _;
+    }
+
     /**
      * @notice Constructs the SecurityToken contract.
      *
@@ -98,7 +103,7 @@ contract SecurityToken is
 
     function burnFrom(address account, uint256 amount)
         public
-        noPendingFee(account)
+        noPendingFees(account)
         noPendingDistribution(account)
         onlyRole(TOKEN_ADMIN)
     {
@@ -112,10 +117,13 @@ contract SecurityToken is
      *
      * @param mgtFee The management fee to be charged
      * @param price The price per token
-     * @param ts The timestamp at which the fee was charged
+     * @param timestamp The timestamp at which the fee was charged
      */
-    function chargeManagementFee(uint8 mgtFee, uint256 price, uint64 ts) public onlyRole(FUND_ADMIN) {
-        _addFee(mgtFee, price, ts);
+    function chargeManagementFee(uint8 mgtFee, uint256 id, uint256 price, uint256 timestamp)
+        public
+        onlyRole(FUND_ADMIN)
+    {
+        _addFee(mgtFee, id, price, timestamp);
     }
 
     /**
@@ -124,15 +132,13 @@ contract SecurityToken is
      * @dev Only an account with the FUND_ADMIN role can call this function.
      *
      * @param feeId The ID of the fee to update
-     * @param status The status to update to
-     * @param ts The timestamp at which the status was updated
      * @param accounts The accounts for which the fee status will be updated
      */
-    function updateFeeStatus(uint32 feeId, uint8 status, uint64 ts, address[] memory accounts)
-        public
-        onlyRole(FUND_ADMIN)
-    {
-        _updateFeeStatus(feeId, accounts, ts, status);
+    function markFeeAsPaid(uint32 feeId, address[] memory accounts) public onlyRole(FUND_ADMIN) {
+        // Maybe emit event here instead of ts
+        for (uint256 i = 0; i < accounts.length; i++) {
+            paidFees[accounts[i]][feeId] = true;
+        }
     }
 
     /**
@@ -147,7 +153,7 @@ contract SecurityToken is
      * @param amount The total amount of tokens to distribute
      * @param scale The scale factor for the distribution
      */
-    function distribute(uint32 distId, string memory distType, uint64 time, uint256 amount, uint256 scale)
+    function distribute(uint32 distId, string memory distType, uint256 time, uint256 amount, uint256 scale)
         public
         onlyRole(DISTRIBUTOR)
     {
@@ -178,7 +184,7 @@ contract SecurityToken is
     function _beforeTokenTransfer(address from, address to, uint256 amount)
         internal
         override
-        noPendingFee(from)
+        noPendingFees(from)
         noPendingDistribution(from)
         nonReentrant
     {
@@ -188,8 +194,8 @@ contract SecurityToken is
         require(complianceRegistry.isCompliant(from), "Sender is not compliant");
         require(complianceRegistry.isCompliant(to), "Recipient is not compliant");
 
-        updateSnapshot(from);
-        updateSnapshot(to);
+        _updateSnapshot(from);
+        _updateSnapshot(to);
         super._beforeTokenTransfer(from, to, amount);
     }
 
@@ -201,7 +207,7 @@ contract SecurityToken is
      *
      * @param account The account for which to update the snapshot
      */
-    function updateSnapshot(address account) private {
+    function _updateSnapshot(address account) private {
         uint32 currentSnapshotIndex = totalDistributions;
         uint256 lastSnapshotIndex = lastDistributionIndex[account];
 
@@ -211,7 +217,7 @@ contract SecurityToken is
             lastDistributionIndex[account] = currentSnapshotIndex;
         }
 
-        uint256 currentFeeSnapshotIndex = nextFeeId();
+        uint256 currentFeeSnapshotIndex = fees.length;
         uint256 lastFeeSnapshotIndex = lastFeeIndex[account];
 
         if (currentFeeSnapshotIndex != lastFeeSnapshotIndex) {
@@ -219,5 +225,30 @@ contract SecurityToken is
             snapshotBalances[account][currentFeeSnapshotIndex] = balance;
             lastFeeIndex[account] = currentFeeSnapshotIndex;
         }
+    }
+
+    /**
+     * @dev Calculates the total unpaid fee balance for an account.
+     * @param account Account to calculate the balance for.
+     */
+    function feeBalance(address account) public view returns (uint256) {
+        uint256 totalFees = 0;
+        for (uint256 i = lastFeeIndex[account]; i < fees.length; i++) {
+            totalFees += calculateFee(account, i);
+        }
+        return totalFees;
+    }
+
+    /**
+     * @dev Calculate fee amount for a specific feeId for an account.
+     * @param account Account to calculate the fee for.
+     * @param feeId ID of the fee to calculate.
+     */
+    function calculateFee(address account, uint256 feeId) public view returns (uint256) {
+        Fee memory fee = fees[feeId];
+        uint256 snapshotBalance = snapshotBalances[account][feeId];
+        uint256 charge = fee.fee * snapshotBalance / fee.price; // Adjusted for the updated fee calculation
+
+        return charge;
     }
 }

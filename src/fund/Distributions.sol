@@ -22,7 +22,7 @@ contract Distributions {
     struct Distribution {
         uint256 amount;
         string distributionType;
-        uint64 time;
+        uint256 time;
     }
 
     /**
@@ -33,7 +33,7 @@ contract Distributions {
      * @param time The timestamp of the distribution
      * @return The ID of the newly created distribution
      */
-    function addDistribution(uint256 amount, string memory distributionType, uint64 time) public returns (uint32) {
+    function addDistribution(uint256 amount, string memory distributionType, uint256 time) public returns (uint32) {
         distributions[distributionsCount] =
             Distribution({amount: amount, distributionType: distributionType, time: time});
 
@@ -63,7 +63,7 @@ contract Distributions {
     function processDistribution(
         ISecurityToken token,
         string calldata distributionType,
-        uint64 time,
+        uint256 time,
         uint32 distId,
         uint256 amount,
         uint256 scale

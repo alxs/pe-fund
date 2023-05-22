@@ -9,12 +9,12 @@ contract DistributionManager {
     struct DistributionEntry {
         uint256 amount;
         string distributionType;
-        uint64 time;
+        uint256 time;
     }
 
     struct AccountDistributionEntry {
         uint256 amount;
-        uint64 time;
+        uint256 time;
         uint32 status;
     }
 
@@ -57,7 +57,7 @@ contract DistributionManager {
      * @param distributionType Type of distribution
      * @param time Timestamp
      */
-    function _addDistribution(uint32 _ditId, uint256 amount, string memory distributionType, uint64 time) internal {
+    function _addDistribution(uint32 _ditId, uint256 amount, string memory distributionType, uint256 time) internal {
         distributions[_ditId] = DistributionEntry(amount, distributionType, time);
         totalDistributionAmount += amount;
         totalDistributions += 1;
@@ -77,11 +77,11 @@ contract DistributionManager {
      * @dev Confirm a distribution
      * @param distId Distribution id
      * @param account Account address
-     * @param ts Timestamp
+     * @param timestamp Timestamp
      */
-    function _confirmDistribution(uint32 distId, address account, uint64 ts) internal {
+    function _confirmDistribution(uint32 distId, address account, uint256 timestamp) internal {
         AccountDistributionEntry storage entry = accountDistributions[distId][account];
-        entry.time = ts;
+        entry.time = timestamp;
         entry.status = DISTRIBUTION_CONFIRMED;
     }
 }

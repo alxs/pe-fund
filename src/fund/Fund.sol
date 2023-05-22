@@ -4,7 +4,7 @@ pragma solidity 0.8.18;
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Pausable.sol";
 import "../interfaces/IComplianceRegistry.sol";
 import "../interfaces/ISecurityToken.sol";
-import "../security_token/SecurityToken.sol";
+import "../securityToken/SecurityToken.sol";
 import "./Expenses.sol";
 import "./Fees.sol";
 import "./CapitalCalls.sol";
@@ -20,13 +20,12 @@ import "./InterestPayments.sol";
  * The contract manages the funds and permissions of users.
  */
 contract Fund is
-    ERC20Pausable,
     AccessControl,
     Expenses,
     CapitalCalls,
     Distributions,
-    Fees,
     Commitments,
+    Fees,
     Deployments,
     Redemptions,
     InterestPayments
@@ -35,11 +34,10 @@ contract Fund is
     bytes32 public constant TOKEN_ADMIN = keccak256("TOKEN_ADMIN");
 
     IComplianceRegistry public registry;
-    ISecurityToken public gpCommitToken;
-    ISecurityToken public lpCommitToken;
     ISecurityToken public gpFundToken;
     ISecurityToken public lpFundToken;
 
+    uint8 public scale;
     uint256 public size;
     uint256 public initialClosing;
     uint256 public finalClosing;
@@ -48,7 +46,6 @@ contract Fund is
     uint256 public mgtFee;
 
     uint256 public commitmentDate;
-    uint256 public deploymentStart;
     uint256 public lpReturn;
     uint256 public gpReturn;
     uint256 public gpCatchup;
@@ -71,8 +68,18 @@ contract Fund is
         uint256 endDate_,
         uint256 commitmentDate_,
         uint256 deploymentStart_,
-        uint256 blockSize_
-    ) {
+        uint256 blockSize_,
+        uint8 scale_,
+        uint256 price_,
+        uint256 prefRate_,
+        uint8 compoundingInterval_,
+        uint8 gpClawback_,
+        uint8 carriedInterest_,
+        uint8 managementFee_
+    )
+        Commitments(blockSize_, price_)
+        Fees(prefRate_, compoundingInterval_, gpClawback_, carriedInterest_, managementFee_)
+    {
         registry = IComplianceRegistry(registryAddress_);
         initialClosing = initialClosing_;
         finalClosing = finalClosing_;
@@ -80,6 +87,7 @@ contract Fund is
         commitmentDate = commitmentDate_;
         deploymentStart = deploymentStart_;
         blockSize = blockSize_;
+        scale = scale_;
 
         _setupRole(FUND_ADMIN, msg.sender);
         _setupRole(TOKEN_ADMIN, tokenAdmin_);
@@ -204,15 +212,6 @@ contract Fund is
     }
 
     /**
-     * @notice Sets the deployment start time of the fund.
-     * @dev Can only be called by an account with the FUND_ADMIN role.
-     * @param _deploymentStart The new deployment start time.
-     */
-    function setDeploymentStart(uint256 _deploymentStart) public onlyRole(FUND_ADMIN) {
-        deploymentStart = _deploymentStart;
-    }
-
-    /**
      * @notice Sets the block size for commits.
      * @dev Can only be called by an account with the FUND_ADMIN role.
      * @param _blockSize The new block size.
@@ -229,6 +228,7 @@ contract Fund is
      * @param time The time of the commit.
      */
     function commit(address account, uint256 amount, uint256 time) public {
+        // @todo these are only implemented for LPs
         require(time <= finalClosing, "Too late to commit");
         // Ensure user can commit
         require(registry.isCompliant(account), "Account is not compliant");
@@ -274,16 +274,8 @@ contract Fund is
      * @param amount The amount of capital to be called.
      * @param drawdownType A string describing the type of drawdown.
      * @param time The timestamp when the capital call is made.
-     * @param gpFundToken The address of the GP fund token.
-     * @param lpFundToken The address of the LP fund token.
      */
-    function capitalCall(
-        uint256 amount,
-        string memory drawdownType,
-        uint256 time,
-        address gpFundToken,
-        address lpFundToken
-    ) public onlyRole(FUND_ADMIN) {
+    function capitalCall(uint256 amount, string memory drawdownType, uint256 time) public onlyRole(FUND_ADMIN) {
         // Check if there is enough committed capital
         uint256 totalCommitted = totalCommittedLp + totalCommittedGp;
         uint256 left = totalCommitted - totalCalled;
@@ -292,30 +284,29 @@ contract Fund is
         // Record the capital call
         uint256 callId = addCapitalCall(amount, drawdownType, time, gpFundToken, lpFundToken);
 
-        uint8 scale = decimals();
         uint256 scaledAmount = amount * scale;
 
         require(scaledAmount / totalCommitted > 0, "FundError: Scale Overflow");
         uint256 scaledShare = scaledAmount / totalCommitted;
 
-        // Calculate and record the capital call for each GP
-        for (uint256 i = 0; i < gpCommitments.length; i++) {
-            uint256 ss = scaledShare * gpCommitments[i].amount;
-            require(ss / scale > 0, "FundError: Scale Overflow");
+        for (uint256 i = 0; i < gpAccounts.length; i++) {
+            Commit memory gpCommit = gpCommitments[gpAccounts[i]];
+            uint256 ss = scaledShare * gpCommit.amount;
             uint256 share = ss / scale;
             require(share != 0, "FundError: Invalid Share");
 
-            accountCapitalCalls[callId].push(gpCommitments[i].address, share, AccountType.Gp);
+            addAccountCapitalCall(callId, gpAccounts[i], share, AccountType.GP);
         }
 
         // And for each LP
-        for (uint256 i = 0; i < lpCommitments.length; i++) {
-            uint256 ss = scaledShare * lpCommitments[i].amount;
+        for (uint256 i = 0; i < lpAccounts.length; i++) {
+            Commit memory lpCommit = lpCommitments[lpAccounts[i]];
+            uint256 ss = scaledShare * lpCommit.amount;
             require(ss / scale > 0, "FundError: Scale Overflow");
             uint256 share = ss / scale;
             require(share != 0, "FundError: Invalid Share");
 
-            accountCapitalCalls[callId].add(lpCommitments[i].address, share, AccountType.Lp);
+            addAccountCapitalCall(callId, gpAccounts[i], share, AccountType.GP);
         }
 
         // Update the total capital called
@@ -342,9 +333,10 @@ contract Fund is
         ISecurityToken[] memory contracts = getFundContracts();
 
         // Charge the management fee for each LP contract
+        // @todo why are there more than 2 LP contracts?
         for (uint256 i = 0; i < contracts.length; i++) {
             // Each contract will handle the fee charge internally
-            contracts[i].chargeManagementFee(time, id, managementFee, price);
+            contracts[i].chargeManagementFee(managementFee, id, price, time);
         }
     }
 
@@ -355,78 +347,69 @@ contract Fund is
      *      the distributions are processed accordingly. Only accounts with the
      *      FUND_ADMIN role can call this function.
      * @param amount The total amount to distribute.
-     * @param distribution_type The type of distribution.
+     * @param distributionType The type of distribution.
      * @param time The timestamp when the distribution is made.
-     * @param gpFundToken The GP fund token contract.
-     * @param lpFundToken The LP fund token contract.
      */
-    function distribute(
-        uint256 amount,
-        string memory distribution_type,
-        uint256 time,
-        ISecurityToken gpFundToken,
-        ISecurityToken lpFundToken
-    ) public onlyRole(FUND_ADMIN) {
+    function distribute(uint256 amount, string calldata distributionType, uint256 time) public onlyRole(FUND_ADMIN) {
         // Record the distribution and get the distribution ID
-        uint256 dist_id = addDistribution(amount, distribution_type, time);
+        uint32 distId = addDistribution(amount, distributionType, time);
 
         // Calculate the new total distribution amount
-        uint256 new_total = totalDistribution + amount;
-        setTotalDistribution(new_total);
+        uint256 newTotal = totalDistribution + amount;
+        setTotalDistribution(newTotal);
 
-        uint256 scale = decimals();
         uint256 carry = carriedInterest;
 
         // Calculate the distribution amount, capital paid, and interest paid
-        (uint256 distribution_amount, uint256 capital_paid, uint256 interest_paid) =
+        (uint256 distributionAmount, uint256 capitalPaid, uint256 interestPaid) =
             addOutflow(amount, scale, getPrefRate(), time, getCompoundingInterval());
 
-        uint256 lp_dist = capital_paid + interest_paid;
+        uint256 lpDist = capitalPaid + interestPaid;
 
         // If there's any interest paid, add it to GP's catchup
-        if (interest_paid > 0) {
-            addGpCatchup((interest_paid * carry) / 1000);
+        if (interestPaid > 0) {
+            addGpCatchup((interestPaid * carry) / 1000);
         }
 
-        uint256 total_catchup = getGpCatchup();
+        uint256 totalCatchup = getGpCatchup();
 
         // If the distribution amount is less than or equal to total catchup, process the distributions
-        if (distribution_amount <= total_catchup) {
-            if (lp_dist > 0) {
-                processDistribution(lpFundToken, distribution_type, time, dist_id, lp_dist, scale);
-                addLpReturn(lp_dist);
+        if (distributionAmount <= totalCatchup) {
+            if (lpDist > 0) {
+                processDistribution(lpFundToken, distributionType, time, distId, lpDist, scale);
+                addLpReturn(lpDist);
             }
 
-            if (distribution_amount > 0) {
-                processDistribution(gpFundToken, distribution_type, time, dist_id, distribution_amount, scale);
-                addGpReturn(distribution_amount);
-                setGpCatchup(total_catchup - distribution_amount);
+            if (distributionAmount > 0) {
+                processDistribution(gpFundToken, distributionType, time, distId, distributionAmount, scale);
+                addGpReturn(distributionAmount);
+                setGpCatchup(totalCatchup - distributionAmount);
             }
             return;
         }
 
-        uint256 gp_dist = total_catchup;
+        uint256 gpDist = totalCatchup;
 
         // Adjust the distribution amount and GP catchup
-        if (total_catchup > 0) {
+        if (totalCatchup > 0) {
             setGpCatchup(0);
-            distribution_amount -= total_catchup;
+            distributionAmount -= totalCatchup;
         }
 
         // Calculate GP's and LP's distribution amounts
-        uint256 gp_split = (distribution_amount * carry) / 1000;
-        gp_dist += gp_split;
-        lp_dist += distribution_amount - gp_split;
+        uint256 gpSplit = (distributionAmount * carry) / 1000;
+        gpDist += gpSplit;
+        lpDist += distributionAmount - gpSplit;
 
         // Process the distributions and update returns
-        if (gp_dist > 0) {
-            processDistribution(gpFundToken, distribution_type, time, dist_id, gp_dist, scale);
-            addGpReturn(gp_dist);
+        if (gpDist > 0) {
+            processDistribution(gpFundToken, distributionType, time, distId, gpDist, scale);
+            addGpReturn(gpDist);
         }
 
-        if (lp_dist > 0) {
-            processDistribution(lpFundToken, distribution_type, time, dist_id, lp_dist, scale);
-            addLpReturn(lp_dist);
+        if (lpDist > 0) {
+            processDistribution(lpFundToken, distributionType, time, distId, lpDist, scale);
+            addLpReturn(lpDist);
         }
     }
 
@@ -465,24 +448,5 @@ contract Fund is
     // @inheritdoc
     function rejectRedemption(address account, uint256 time) public override onlyRole(FUND_ADMIN) {
         super.rejectRedemption(account, time);
-    }
-
-    /**
-     * @dev Pauses all token transfers.
-     * See {Pausable-_pause}.
-     * Only callable by FUND_ADMIN role.
-     */
-
-    function pause() public onlyRole(TOKEN_ADMIN) {
-        _pause();
-    }
-
-    /**
-     * @dev Unpauses all token transfers.
-     * See {Pausable-_unpause}.
-     * Only callable by FUND_ADMIN role.
-     */
-    function unpause() public onlyRole(TOKEN_ADMIN) {
-        _unpause();
     }
 }

@@ -5,10 +5,9 @@ pragma solidity 0.8.18;
  * @title Expenses Smart Contract in Solidity
  */
 contract Expenses {
-
     struct Expense {
         uint256 amount;
-        uint64 timestamp;
+        uint256 timestamp;
         string expenseType;
     }
 
@@ -25,29 +24,25 @@ contract Expenses {
 
     /**
      * @notice Sets the total expenses
-     * @param _value The value to set total expenses to
+     * @param value The value to set total expenses to
      */
-    function setTotalExpenses(uint256 _value) public {
-        totalExpenses = _value;
+    function setTotalExpenses(uint256 value) public {
+        totalExpenses = value;
     }
 
     /**
      * @notice Adds an expense
-     * @param _amount The amount of the expense
-     * @param _time The timestamp of the expense
-     * @param _expenseType The type of the expense
+     * @param amount The amount of the expense
+     * @param timestamp The timestamp of the expense
+     * @param expenseType The type of the expense
      */
-    function chargeExpense(uint256 _amount, uint64 _time, string memory _expenseType) public {
-        Expense memory newExpense = Expense({
-            amount: _amount,
-            timestamp: _time,
-            expenseType: _expenseType
-        });
-        
+    function chargeExpense(uint256 amount, uint256 timestamp, string memory expenseType) public {
+        Expense memory newExpense = Expense({amount: amount, timestamp: timestamp, expenseType: expenseType});
+
         expenses.push(newExpense);
 
         // Update the total
-        totalExpenses += _amount;
+        totalExpenses += amount;
     }
 
     /**

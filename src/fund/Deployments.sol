@@ -10,16 +10,16 @@ contract Deployments {
     // Struct to store deployment details
     struct Deployment {
         uint256 amount;
-        uint64 time;
+        uint256 time;
         address assetContract;
     }
 
     // Array to store deployments
-    Deployment[] private deployments;
+    Deployment[] public deployments;
 
     // Internal variables for total deployed and deployment start
-    uint256 private totalDeployed;
-    uint64 private deploymentStart;
+    uint256 public totalDeployed;
+    uint256 public deploymentStart;
 
     /**
      * @dev Initializes the contract setting the initial deployments to zero.
@@ -32,7 +32,7 @@ contract Deployments {
      * @dev Sets the deployment start.
      * @param value The value to set
      */
-    function setDeploymentStart(uint64 value) public {
+    function setDeploymentStart(uint256 value) public {
         require(deploymentStart == 0, "Deployment start already set");
         deploymentStart = value;
     }
@@ -43,7 +43,7 @@ contract Deployments {
      * @param time The timestamp of deployment
      * @param assetContract The address of the asset contract
      */
-    function deployCapital(uint256 amount, uint64 time, address assetContract) public {
+    function deployCapital(uint256 amount, uint256 time, address assetContract) public {
         // Add the deployment
         deployments.push(Deployment(amount, time, assetContract));
 

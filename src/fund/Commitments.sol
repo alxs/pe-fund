@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.18;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "../interfaces/ISecurityToken.sol";
 
 /**
  * @title Commitments
@@ -29,11 +29,14 @@ contract Commitments {
     uint256 public totalCommittedLp;
     uint256 public blockSize;
     uint256 public price;
-    IERC20 public lpToken;
 
+    ISecurityToken public gpCommitToken;
+    ISecurityToken public lpCommitToken;
     // Commitments mapping
     mapping(address => Commit) public lpCommitments;
+    address[] public gpAccounts;
     mapping(address => Commit) public gpCommitments;
+    address[] public lpAccounts;
 
     // Events
     event LpCommitmentAdded(address indexed account, uint256 amount, uint256 timestamp);
@@ -46,12 +49,10 @@ contract Commitments {
      * @dev Constructor sets the initial values.
      * @param _blockSize The initial block size.
      * @param _price The initial price.
-     * @param _lpToken The address of the LP token.
      */
-    constructor(uint256 _blockSize, uint256 _price, IERC20 _lpToken) {
+    constructor(uint256 _blockSize, uint256 _price) {
         blockSize = _blockSize;
         price = _price;
-        lpToken = _lpToken;
         totalInterest = 0;
         totalCommittedGp = 0;
         totalCommittedLp = 0;
@@ -98,6 +99,7 @@ contract Commitments {
     function addGpCommitment(address _account, uint256 _amount, uint256 _time) internal {
         totalCommittedGp = totalCommittedGp + _amount;
         gpCommitments[_account] = Commit(_amount, _time, COMMIT_APPROVED);
+        gpAccounts.push(_account);
         emit GpCommitmentAdded(_account, _amount, _time);
     }
 
@@ -115,6 +117,7 @@ contract Commitments {
 
         if (commit.status == 0) {
             lpCommitments[_account] = Commit(_amount, _time, COMMIT_PENDING);
+            lpAccounts.push(_account);
         } else {
             commit.amount = _amount;
             commit.timestamp = _time;
@@ -155,7 +158,7 @@ contract Commitments {
             commit.status = COMMIT_APPROVED;
 
             totalCommittedLp = totalCommittedLp + commit.amount;
-            lpToken.transfer(_accounts[i], commit.amount / price);
+            lpCommitToken.mint(_accounts[i], commit.amount / price);
             emit LpCommitmentApproved(_accounts[i], commit.amount, _time);
         }
     }
