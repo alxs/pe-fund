@@ -102,8 +102,8 @@ contract FundDemoScript is Script {
         console.log("Block Size             | %d", fundSize);
         console.log("Price                  | %d", fundPrice);
         console.log("Total Committed        | %d", totalCommitted);
-        console.log(" |- Committed by GPs   | %d", totalCommittedGp);
-        console.log(" |- Committed by LPs   | %d", totalCommittedLp);
+        console.log(unicode" ├─ Committed by GPs   | %d", totalCommittedGp);
+        console.log(unicode" └- Committed by LPs   | %d", totalCommittedLp);
         console.log("Total Called           | %d", totalCalled);
 
         console.log("--------------------------------------------------------");
@@ -111,7 +111,7 @@ contract FundDemoScript is Script {
         console.log("--------------------------------------------------------");
 
         for (uint256 i = 0; i < accounts.length; i++) {
-            console.log("Account: %s (LP%s)", accounts[i], i+1);
+            console.log("Account: %s (LP%s)", accounts[i], i + 1);
 
             // Print LP commit token balance
             uint256 lpCommitAmount = fund.lpCommitToken().balanceOf(accounts[i]);
