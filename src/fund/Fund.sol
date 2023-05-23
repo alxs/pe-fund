@@ -352,6 +352,7 @@ contract Fund is
         // Trigger the charge of the management fee
         lpCommitToken.chargeManagementFee(managementFee, id, price, time);
     }
+
     /**
      * @dev Handles the finalization of a capital call.
      * This function should be called after the capital call has been satisfied.

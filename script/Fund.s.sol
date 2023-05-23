@@ -4,6 +4,7 @@ pragma solidity ^0.8.13;
 import "forge-std/Script.sol";
 import "forge-std/console.sol";
 import "../src/fund/Fund.sol";
+import "../src/fund/Commitments.sol";
 import "../src/compliance/ComplianceRegistry.sol";
 
 contract FundDemoScript is Script {
@@ -46,7 +47,7 @@ contract FundDemoScript is Script {
             blockSize_: 10000,
             scale_: 8,
             price_: 100,
-            prefRate_: 5,
+            prefRate_: 8,
             compoundingInterval_: 1,
             gpClawback_: 20,
             carriedInterest_: 20,
@@ -58,12 +59,12 @@ contract FundDemoScript is Script {
 
         // Step 2: LP1 commits
         fund.commit(lp1, 20000000, 1677155400); // 2023-03-02 14:10:00
-        console.log("Step 2: LP1 committment added successfully");
+        console.log("Step 2: LP1 commitment added successfully");
         showFundDetails();
 
         // Step 3: LP2 commits
         fund.commit(lp2, 40000000, 1677155400); // 2023-03-02 14:10:00
-        console.log("Step 3: LP2 committment added successfully");
+        console.log("Step 3: LP2 commitment added successfully");
         showFundDetails();
 
         // Step 4: Approve commits
@@ -85,9 +86,11 @@ contract FundDemoScript is Script {
         fund.capitalCallDone(callId, lp2, 100);
         console.log("Step 8: Capital call confirmed for LP2");
         showFundDetails();
+
+        // @todo format amounts with decimals
     }
 
-    function showFundDetails() public view {
+    function showFundDetails() private view {
         console.log("--------------------------------------------------------");
         console.log("%s Details", fund.name());
         console.log("--------------------------------------------------------");
@@ -113,6 +116,10 @@ contract FundDemoScript is Script {
         for (uint256 i = 0; i < accounts.length; i++) {
             console.log("Account: %s (LP%s)", accounts[i], i + 1);
 
+            // Print account commitments
+            (uint256 amount,, Fund.CommitState status) = fund.lpCommitments(accounts[i]);
+            console.log("   Commitment: %d, Status: %s", amount, commitStateToString(uint8(status)));
+
             // Print LP commit token balance
             uint256 lpCommitAmount = fund.lpCommitToken().balanceOf(accounts[i]);
             console.log("   LP Commit Tokens : %d", lpCommitAmount);
@@ -132,5 +139,15 @@ contract FundDemoScript is Script {
             console.log("--------------------------------------------------------");
         }
         console.log("\n\n");
+    }
+
+    function commitStateToString(uint8 state) private pure returns (string memory) {
+        if (state == 0) return "COMMIT_NONE";
+        if (state == 1) return "COMMIT_PENDING";
+        if (state == 2) return "COMMIT_APPROVED";
+        if (state == 3) return "COMMIT_CANCELLED";
+        if (state == 4) return "COMMIT_REJECTED";
+        if (state == 5) return "COMMIT_BLOCKED";
+        return "Unknown";
     }
 }

@@ -13,17 +13,20 @@ contract Commitments {
     struct Commit {
         uint256 amount;
         uint256 timestamp;
-        uint8 status;
+        CommitState status;
     }
 
     // Define constants for different commitment statuses.
-    uint8 constant COMMIT_PENDING = 0x01;
-    uint8 constant COMMIT_APPROVED = 0x02;
-    uint8 constant COMMIT_CANCELLED = 0x04;
-    uint8 constant COMMIT_REJECTED = 0x08;
-    uint8 constant COMMIT_BLOCKED = 0x10;
-
+    enum CommitState {
+        COMMIT_NONE,
+        COMMIT_PENDING,
+        COMMIT_APPROVED,
+        COMMIT_CANCELLED,
+        COMMIT_REJECTED,
+        COMMIT_BLOCKED
+    }
     // Declare public state variables.
+
     uint256 public totalInterest;
     uint256 public totalCommittedGp;
     uint256 public totalCommittedLp;
@@ -96,7 +99,7 @@ contract Commitments {
      */
     function _addGpCommitment(address account, uint256 amount, uint256 time) internal {
         totalCommittedGp += amount;
-        gpCommitments[account] = Commit(amount, time, COMMIT_APPROVED);
+        gpCommitments[account] = Commit(amount, time, CommitState.COMMIT_APPROVED);
         gpAccounts.push(account);
         emit GpCommitmentAdded(account, amount, time);
     }
@@ -109,17 +112,17 @@ contract Commitments {
      */
     function _addLpCommitment(address account, uint256 amount, uint256 time) internal {
         Commit storage commit = lpCommitments[account];
-        if (commit.status != 0 && commit.status != COMMIT_BLOCKED) {
+        if (commit.status != CommitState.COMMIT_NONE && commit.status != CommitState.COMMIT_BLOCKED) {
             totalInterest -= commit.amount;
         }
 
-        if (commit.status == 0) {
-            lpCommitments[account] = Commit(amount, time, COMMIT_PENDING);
+        if (commit.status == CommitState.COMMIT_NONE) {
+            lpCommitments[account] = Commit(amount, time, CommitState.COMMIT_PENDING);
             lpAccounts.push(account);
         } else {
             commit.amount = amount;
             commit.timestamp = time;
-            commit.status = COMMIT_PENDING;
+            commit.status = CommitState.COMMIT_PENDING;
         }
 
         totalInterest += amount;
@@ -134,10 +137,10 @@ contract Commitments {
     function _cancelLpCommitment(address account, uint256 time) internal {
         // @todo this should probably by callable by the user
         Commit storage commit = lpCommitments[account];
-        require(commit.status & COMMIT_PENDING == COMMIT_PENDING, "Too late to cancel");
+        require(commit.status == CommitState.COMMIT_PENDING, "Too late to cancel");
 
         commit.timestamp = time;
-        commit.status = COMMIT_CANCELLED;
+        commit.status = CommitState.COMMIT_CANCELLED;
 
         totalInterest -= commit.amount;
         emit LpCommitmentCancelled(account, time);
@@ -151,9 +154,9 @@ contract Commitments {
     function _approveLpCommitments(address[] calldata accounts, uint256 time, IFundToken lpCommitToken) internal {
         for (uint256 i = 0; i < accounts.length; i++) {
             Commit storage commit = lpCommitments[accounts[i]];
-            require(commit.status == COMMIT_PENDING, "Commit not allowed");
+            require(commit.status == CommitState.COMMIT_PENDING, "Commit not allowed");
             commit.timestamp = time;
-            commit.status = COMMIT_APPROVED;
+            commit.status = CommitState.COMMIT_APPROVED;
 
             totalCommittedLp += commit.amount;
             lpCommitToken.mint(accounts[i], commit.amount / price);
@@ -169,10 +172,10 @@ contract Commitments {
     function _rejectLpCommitments(address[] calldata accounts, uint256 time) internal {
         for (uint256 i = 0; i < accounts.length; i++) {
             Commit storage commit = lpCommitments[accounts[i]];
-            require(commit.status & COMMIT_PENDING == COMMIT_PENDING, "Commit not allowed");
+            require(commit.status == CommitState.COMMIT_PENDING, "Commit not allowed");
 
             commit.timestamp = time;
-            commit.status = COMMIT_REJECTED;
+            commit.status = CommitState.COMMIT_REJECTED;
             emit LpCommitmentRejected(accounts[i], time);
         }
     }
