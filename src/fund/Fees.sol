@@ -9,7 +9,6 @@ pragma solidity 0.8.18;
 contract Fees {
     // Fee structure details
     uint256 public prefRate;
-    uint8 public compoundingInterval;
     uint8 public gpClawback;
     uint8 public carriedInterest;
     uint8 public managementFee;
@@ -17,7 +16,7 @@ contract Fees {
     // Structure to hold the fee request details
     struct FeeRequest {
         uint8 fee;
-        uint256 time;
+        uint32 time;
     }
 
     // Array to store the history of fee requests
@@ -27,39 +26,20 @@ contract Fees {
      * @notice Initializes the contract with initial fee details
      * @dev This constructor takes in parameters to initialize the fee structure.
      * @param _prefRate Preferred Rate
-     * @param _compoundingInterval Compounding Interval
      * @param _gpClawback GP Clawback
      * @param _carriedInterest Carried Interest
      * @param _managementFee Management Fee
      */
     constructor(
         uint256 _prefRate,
-        uint8 _compoundingInterval,
         uint8 _gpClawback,
         uint8 _carriedInterest,
         uint8 _managementFee
     ) {
         prefRate = _prefRate;
-        compoundingInterval = _compoundingInterval;
         gpClawback = _gpClawback;
         carriedInterest = _carriedInterest;
         managementFee = _managementFee;
-    }
-
-    /**
-     * @notice Returns the current preferred rate
-     * @return The current preferred rate
-     */
-    function getPrefRate() public view returns (uint256) {
-        return prefRate;
-    }
-
-    /**
-     * @notice Returns the current compounding interval
-     * @return The current compounding interval
-     */
-    function getCompoundingInterval() public view returns (uint8) {
-        return compoundingInterval;
     }
 
     /**
@@ -69,15 +49,6 @@ contract Fees {
      */
     function _setPrefRate(uint256 _prefRate) internal {
         prefRate = _prefRate;
-    }
-
-    /**
-     * @notice Updates the compounding interval
-     * @dev Only accessible internally
-     * @param _compoundingInterval The new compounding interval to be set
-     */
-    function _setCompoundingInterval(uint8 _compoundingInterval) internal {
-        compoundingInterval = _compoundingInterval;
     }
 
     /**
@@ -115,7 +86,7 @@ contract Fees {
      * @param time The time of the fee request
      * @return count The current count of fee requests after the new addition
      */
-    function addFeeRequest(uint8 fee, uint256 time) internal returns (uint16 count) {
+    function addFeeRequest(uint8 fee, uint32 time) internal returns (uint16 count) {
         FeeRequest memory newFeeRequest = FeeRequest(fee, time);
         feeHistory.push(newFeeRequest);
         return uint16(feeHistory.length - 1);

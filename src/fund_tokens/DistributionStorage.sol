@@ -32,6 +32,8 @@ contract DistributionStorage {
         string memory distributionType,
         uint32 time
     ) internal {
+        require(distributions[distId].timestamp == 0, "Distribution already set");
+
         distributions[distId] = Distribution(scaledShare, scale, distributionType, time);
         ++totalDistributions;
     }

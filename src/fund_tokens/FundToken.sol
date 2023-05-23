@@ -28,6 +28,7 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard,
     // Constants representing the different roles within the system
     bytes32 public constant FUND_ADMIN = keccak256("FUND_ADMIN");
     bytes32 public constant TOKEN_ADMIN = keccak256("TOKEN_ADMIN");
+    // @todo ^ this is just the fund. do we need more roles?
 
     // Mappings for storing account related data
     mapping(address => mapping(uint16 => uint256)) private snapshotBalances;
@@ -240,7 +241,27 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard,
         emit DistributionConfirmed(account, distId);
     }
 
-    // @todo implement pause/unpause
+    /**
+     * @dev Pauses all token transfers.
+     *
+     * Requirements:
+     *
+     * - the caller must have the `TOKEN_ADMIN` role.
+     */
+    function pause() public onlyRole(TOKEN_ADMIN) {
+        _pause();
+    }
+
+    /**
+     * @dev Unpauses all token transfers.
+     *
+     * Requirements:
+     *
+     * - the caller must have the `TOKEN_ADMIN` role.
+     */
+    function unpause() public onlyRole(TOKEN_ADMIN) {
+        _unpause();
+    }
 
     /* ========== INTERNAL ========== */
 
@@ -271,16 +292,19 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard,
     }
 
     /**
-     * @notice Internal function that is called before any transfer of tokens. @todo this includes minting and burning.
+     * @dev Overriding ERC20Pausable's _beforeTokenTransfer function.
+     * Updates snapshot balances and ensures the operation is compliant.
+     * This function is called prior to any transfer of tokens.
      *
-     * @dev Overridden from ERC20Pausable.
-     * Ensures that the operation is compliant, updates snapshot balances, and checks for any pending fees or distributions.
+     * @param from The sender's address
+     * @param to The receiver's address
+     * @param amount The amount of tokens being transferred
      *
-     * @param from The address of the sender
-     * @param to The address of the receiver
-     * @param amount The amount of tokens to transfer
+     * Requirements:
+     * - Sender and recipient must be compliant or an address zero.
+     * - Commit token operations can only be performed by an account with the TOKEN_ADMIN role.
+     * - Neither the sender nor recipient have pending fees or distributions.
      */
-
     function _beforeTokenTransfer(address from, address to, uint256 amount)
         internal
         override
@@ -288,40 +312,44 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard,
         noPendingDistribution(from)
         nonReentrant
     {
-        // @todo
-        // require(!isCommitToken, "This operation is not supported for commit tokens");
+        require(!isCommitToken || hasRole(TOKEN_ADMIN, msg.sender), "Operation not supported for commit tokens");
 
         // Ensure sender and recipient are compliant
-        require(complianceRegistry.isCompliant(from) || from == address(0), "Sender is not compliant");
-        require(complianceRegistry.isCompliant(to) || to == address(0), "Recipient is not compliant");
+        require(complianceRegistry.isCompliant(from) || from == address(0), "Sender non-compliant");
+        require(complianceRegistry.isCompliant(to) || to == address(0), "Recipient non-compliant");
 
+        // Update the balance snapshots for sender and receiver
         _updateSnapshot(from);
         _updateSnapshot(to);
+
+        // Call the inherited _beforeTokenTransfer function
         super._beforeTokenTransfer(from, to, amount);
     }
 
     /**
-     * @notice Updates the balance snapshot for an account.
+     * @dev Updates the balance snapshot for an account.
+     * If the snapshot index for distributions or fees is outdated, it creates a new snapshot.
+     * A snapshot captures the account balance at a specific point in time (either a distribution or fee event).
+     * This snapshot is used to determine the account's eligibility for fee claims or distributions.
      *
-     * @dev If the snapshot index for distributions or fees does not match the account's last snapshot index, a new
-     * snapshot is recorded with the current balance of the account.
-     *
-     * @param account The account for which to update the snapshot
+     * @param account The account for which the snapshot is being updated
      */
     function _updateSnapshot(address account) private {
         uint16 currentSnapshotIndex = totalDistributions;
         uint16 lastSnapshotIndex = lastDistributionIndex[account];
 
+        // If the distribution snapshot index is outdated, update it
         if (currentSnapshotIndex != lastSnapshotIndex) {
-            snapshotBalances[account][currentSnapshotIndex] = account.balance;
+            snapshotBalances[account][currentSnapshotIndex] = balanceOf(account);
             lastDistributionIndex[account] = currentSnapshotIndex;
         }
 
         uint16 currentFeeSnapshotIndex = totalFees;
         uint16 lastFeeSnapshotIndex = lastFeeIndex[account];
 
+        // If the fee snapshot index is outdated, update it
         if (currentFeeSnapshotIndex != lastFeeSnapshotIndex) {
-            snapshotBalances[account][currentFeeSnapshotIndex] = account.balance;
+            snapshotBalances[account][currentFeeSnapshotIndex] = balanceOf(account);
             lastFeeIndex[account] = currentFeeSnapshotIndex;
         }
     }

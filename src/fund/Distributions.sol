@@ -22,7 +22,7 @@ contract Distributions {
     struct Distribution {
         uint256 amount;
         string distributionType;
-        uint256 time;
+        uint32 time;
     }
 
     /**

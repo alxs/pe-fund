@@ -8,7 +8,7 @@ import "../src/compliance/ComplianceRegistry.sol";
 contract FundTest is Test {
     Fund fund;
     ComplianceRegistry registry;
-    IERC20 usdc;
+    IERC20 usdc = IERC20(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
 
     address owner;
     address kycAdmin;
@@ -33,6 +33,7 @@ contract FundTest is Test {
         fund = new Fund({
             name_: "Test Fund",
             registryAddress_: address(registry),
+            usdc_: address(usdc),
             initialClosing_: uint32(block.timestamp + 1 days),
             finalClosing_: uint32(block.timestamp + 30 days),
             endDate_: uint32(block.timestamp + 60 days),
@@ -42,14 +43,11 @@ contract FundTest is Test {
             scale_: 1, // scale
             price_: 100, // price
             prefRate_: 5, // preferred rate
-            compoundingInterval_: 1, // compounding interval
+            compoundingInterval_: InterestPayments.CompoundingPeriod.ANNUAL_COMPOUNDING, // compounding interval
             gpClawback_: 20, // gp clawback
             carriedInterest_: 20, // carried interest
             managementFee_: 2 // management fee
         });
-
-        // fund._initTokens(usdc);
-        // @todo
     }
 
     function test_commitment() public {
@@ -100,7 +98,7 @@ contract FundTest is Test {
         uint256 blockSize = fund.blockSize();
         address account = address(0x1234567890123456789012345678901234567890);
         uint256 amount = 1000 * blockSize;
-        uint256 time = 1635772800;
+        uint32 time = 1635772800;
         fund.commit(account, amount, time);
 
         // Check the user's commitment exists
@@ -124,7 +122,7 @@ contract FundTest is Test {
         // - time: 1635772800 (2022-11-01 18:00:00)
 
         uint256 amount = 1000 * fund.blockSize();
-        uint256 time = 1635772800;
+        uint32 time = 1635772800;
 
         // Get the initial GP commit token balance
         uint256 initialBalance = fund.gpCommitToken().balanceOf(compliantAccount);
@@ -152,10 +150,10 @@ contract FundTest is Test {
         uint32 time = 1635772800;
 
         // Call the capitalCall function with the specified parameters
-        uint256 callId = fund.capitalCall(amount, drawdownType, time);
+        uint16 callId = fund.capitalCall(amount, drawdownType, time);
 
         // Check the capital call data
-        (uint256 amount_, string memory drawdownType_, uint256 time_) = fund.capitalCalls(callId);
+        (uint256 amount_, string memory drawdownType_, uint32 time_) = fund.capitalCalls(callId);
 
         // Assert that the data matches the expected values
         assertEq(amount_, amount);
@@ -169,7 +167,7 @@ contract FundTest is Test {
         // Use mock data and contracts to simulate real funds(use Mocks).
 
         // Capture the current timestamp
-        // uint256 time = block.timestamp;
+        // uint32 time = block.timestamp;
 
         // Call the chargeManagementFee function
         // fund.chargeManagementFee();
@@ -216,7 +214,7 @@ contract FundTest is Test {
 
         address account = address(0x1234567890123456789012345678901234567890);
         uint256 amount = 1000 * fund.blockSize();
-        uint256 time = 1635772800;
+        uint32 time = 1635772800;
 
         // Get the initial redeemable tokens
         uint256 initialRedeemableTokens = fund.lpFundToken().balanceOf(account);
@@ -237,7 +235,7 @@ contract FundTest is Test {
         // First, make a successful redemption
         address account = address(0x1234567890123456789012345678901234567890);
         uint256 amount = 1000 * fund.blockSize();
-        uint256 time = 1635772800;
+        uint32 time = 1635772800;
         fund.redeem(account, amount, time);
 
         // Check the user's redemption request exists
@@ -259,7 +257,7 @@ contract FundTest is Test {
         // First, make a successful redemption
         address account = address(0x1234567890123456789012345678901234567890);
         uint256 amount = 1000 * fund.blockSize();
-        uint256 time = 1635772800;
+        uint32 time = 1635772800;
         vm.startPrank(compliantAccount);
         fund.redeem(account, amount, time);
 
@@ -276,7 +274,7 @@ contract FundTest is Test {
         // First, add a redemption
         address account = address(0x1234567890123456789012345678901234567890);
         uint256 amount = 1000 * fund.blockSize();
-        uint256 time = 1635772800;
+        uint32 time = 1635772800;
         fund.redeem(account, amount, time);
 
         // Call the approveRedemption function with the specified parameters
@@ -292,7 +290,7 @@ contract FundTest is Test {
         // First, make a successful redemption
         address account = address(0x1234567890123456789012345678901234567890);
         uint256 amount = 1000 * fund.blockSize();
-        uint256 time = 1635772800;
+        uint32 time = 1635772800;
         fund.redeem(account, amount, time);
 
         // Call the rejectRedemption function with the specified parameters

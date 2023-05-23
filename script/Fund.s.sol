@@ -39,6 +39,7 @@ contract FundDemoScript is Script {
         fund = new Fund({
             name_: "Demo Fund",
             registryAddress_: address(registry),
+            usdc_: address(usdc),
             initialClosing_: uint32(block.timestamp + 1 days),
             finalClosing_: uint32(block.timestamp + 30 days),
             endDate_: uint32(block.timestamp + 60 days),
@@ -48,12 +49,11 @@ contract FundDemoScript is Script {
             scale_: 8,
             price_: 100,
             prefRate_: 8,
-            compoundingInterval_: 1,
+            compoundingInterval_: InterestPayments.CompoundingPeriod.ANNUAL_COMPOUNDING,
             gpClawback_: 20,
             carriedInterest_: 20,
             managementFee_: 2
         });
-        fund._initTokens(usdc);
         console.log("Step 1: Fund deployed successfully");
         showFundDetails();
 
@@ -73,7 +73,7 @@ contract FundDemoScript is Script {
         showFundDetails();
 
         // Step 5: Admin calls capital
-        uint256 callId = fund.capitalCall(10000000, "invest A", 1677155700); // 2023-03-02 14:15:00
+        uint16 callId = fund.capitalCall(10000000, "invest A", 1677155700); // 2023-03-02 14:15:00
         console.log("Step 6: Capital called");
         showFundDetails();
 
@@ -86,8 +86,6 @@ contract FundDemoScript is Script {
         fund.capitalCallDone(callId, lp2, 100);
         console.log("Step 8: Capital call confirmed for LP2");
         showFundDetails();
-
-        // @todo format amounts with decimals
     }
 
     function showFundDetails() private view {

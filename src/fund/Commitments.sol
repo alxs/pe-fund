@@ -12,7 +12,7 @@ contract Commitments {
     // Structure to store commitment data.
     struct Commit {
         uint256 amount;
-        uint256 timestamp;
+        uint32 timestamp;
         CommitState status;
     }
 
@@ -25,9 +25,9 @@ contract Commitments {
         COMMIT_REJECTED,
         COMMIT_BLOCKED
     }
-    // Declare public state variables.
 
-    uint256 public totalInterest;
+    // Declare public state variables.
+    uint256 public totalPendingLpCommits;
     uint256 public totalCommittedGp;
     uint256 public totalCommittedLp;
     uint256 public blockSize;
@@ -40,11 +40,11 @@ contract Commitments {
     address[] public lpAccounts;
 
     // Event declarations.
-    event LpCommitmentAdded(address indexed account, uint256 amount, uint256 timestamp);
-    event GpCommitmentAdded(address indexed account, uint256 amount, uint256 timestamp);
-    event LpCommitmentCancelled(address indexed account, uint256 timestamp);
-    event LpCommitmentApproved(address indexed account, uint256 amount, uint256 timestamp);
-    event LpCommitmentRejected(address indexed account, uint256 timestamp);
+    event LpCommitmentAdded(address indexed account, uint256 amount, uint32 timestamp);
+    event GpCommitmentAdded(address indexed account, uint256 amount, uint32 timestamp);
+    event LpCommitmentCancelled(address indexed account, uint32 timestamp);
+    event LpCommitmentApproved(address indexed account, uint256 amount, uint32 timestamp);
+    event LpCommitmentRejected(address indexed account, uint32 timestamp);
 
     /**
      * @dev Sets initial values for block size and price.
@@ -54,42 +54,19 @@ contract Commitments {
     constructor(uint256 blockSize_, uint256 price_) {
         blockSize = blockSize_;
         price = price_;
-        totalInterest = 0;
-        totalCommittedGp = 0;
-        totalCommittedLp = 0;
     }
 
-    /**
-     * @dev Returns the total interest.
-     * @return The total interest.
-     */
-    function getTotalInterest() external view returns (uint256) {
-        return totalInterest;
-    }
+    /* ========== VIEW FUNCTIONS ========== */
 
     /**
      * @dev Returns the total committed amount for both GPs and LPs.
      * @return The total committed amount.
      */
-    function totalCommitted() external view returns (uint256) {
+    function totalCommitted() public view returns (uint256) {
         return totalCommittedGp + totalCommittedLp;
     }
 
-    /**
-     * @dev Returns the total committed amount for GPs.
-     * @return The total committed amount for GPs.
-     */
-    function getTotalCommittedGP() external view returns (uint256) {
-        return totalCommittedGp;
-    }
-
-    /**
-     * @dev Returns the total committed amount for LPs.
-     * @return The total committed amount for LPs.
-     */
-    function getTotalCommittedLP() external view returns (uint256) {
-        return totalCommittedLp;
-    }
+    /* ========== INTERNAL ========== */
 
     /**
      * @dev Adds a new GP commitment.
@@ -97,7 +74,7 @@ contract Commitments {
      * @param amount Commitment amount.
      * @param time Commitment timestamp.
      */
-    function _addGpCommitment(address account, uint256 amount, uint256 time) internal {
+    function _addGpCommitment(address account, uint256 amount, uint32 time) internal {
         totalCommittedGp += amount;
         gpCommitments[account] = Commit(amount, time, CommitState.COMMIT_APPROVED);
         gpAccounts.push(account);
@@ -110,10 +87,10 @@ contract Commitments {
      * @param amount Commitment amount.
      * @param time Commitment timestamp.
      */
-    function _addLpCommitment(address account, uint256 amount, uint256 time) internal {
+    function _addLpCommitment(address account, uint256 amount, uint32 time) internal {
         Commit storage commit = lpCommitments[account];
         if (commit.status != CommitState.COMMIT_NONE && commit.status != CommitState.COMMIT_BLOCKED) {
-            totalInterest -= commit.amount;
+            totalPendingLpCommits -= commit.amount;
         }
 
         if (commit.status == CommitState.COMMIT_NONE) {
@@ -125,7 +102,7 @@ contract Commitments {
             commit.status = CommitState.COMMIT_PENDING;
         }
 
-        totalInterest += amount;
+        totalPendingLpCommits += amount;
         emit LpCommitmentAdded(account, amount, time);
     }
 
@@ -134,15 +111,14 @@ contract Commitments {
      * @param account Address of the account.
      * @param time Cancellation timestamp.
      */
-    function _cancelLpCommitment(address account, uint256 time) internal {
-        // @todo this should probably by callable by the user
+    function _cancelLpCommitment(address account, uint32 time) internal {
         Commit storage commit = lpCommitments[account];
         require(commit.status == CommitState.COMMIT_PENDING, "Too late to cancel");
 
         commit.timestamp = time;
         commit.status = CommitState.COMMIT_CANCELLED;
 
-        totalInterest -= commit.amount;
+        totalPendingLpCommits -= commit.amount;
         emit LpCommitmentCancelled(account, time);
     }
 
@@ -151,7 +127,7 @@ contract Commitments {
      * @param accounts Array of account addresses to approve.
      * @param time Approval timestamp.
      */
-    function _approveLpCommitments(address[] calldata accounts, uint256 time, IFundToken lpCommitToken) internal {
+    function _approveLpCommitments(address[] calldata accounts, uint32 time, IFundToken lpCommitToken) internal {
         for (uint256 i = 0; i < accounts.length; i++) {
             Commit storage commit = lpCommitments[accounts[i]];
             require(commit.status == CommitState.COMMIT_PENDING, "Commit not allowed");
@@ -169,7 +145,7 @@ contract Commitments {
      * @param accounts Array of account addresses to reject.
      * @param time Rejection timestamp.
      */
-    function _rejectLpCommitments(address[] calldata accounts, uint256 time) internal {
+    function _rejectLpCommitments(address[] calldata accounts, uint32 time) internal {
         for (uint256 i = 0; i < accounts.length; i++) {
             Commit storage commit = lpCommitments[accounts[i]];
             require(commit.status == CommitState.COMMIT_PENDING, "Commit not allowed");

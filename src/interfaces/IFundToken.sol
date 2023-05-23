@@ -9,4 +9,6 @@ interface IFundToken is IERC20 {
     function chargeManagementFee(uint8 mgtFee, uint16 id, uint256 price, uint32 timestamp) external;
     function distribute(uint16 distId, string memory distType, uint32 timestamp, uint256 amount, uint256 scale) external;
     function isCommitToken() external view returns (bool);
+    function pause() external;
+    function unpause() external;
 }

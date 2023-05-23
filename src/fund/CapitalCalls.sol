@@ -19,25 +19,24 @@ contract CapitalCalls {
     struct CapitalCall {
         uint256 amount; // Amount of the capital call
         string drawdownType; // Type of drawdown as a string
-        uint256 time; // Timestamp when the capital call was created
+        uint32 time; // Timestamp when the capital call was created
     }
 
     // Struct to represent an account's capital call
     struct AccountCapitalCall {
         uint256 amount; // Amount of the capital call for the account
-        uint256 timestamp; // Timestamp when the capital call was handled
+        uint32 timestamp; // Timestamp when the capital call was handled
         AccountType accountType; // Type of the account (GP or LP)
         bool isDone; // Flag indicating if the capital call is done
         bool hasFailed; // Flag indicating if the capital call has failed
     }
 
-    mapping(uint256 => CapitalCall) public capitalCalls; // Mapping to store capital calls
+    CapitalCall[] public capitalCalls; // Mapping to store capital calls
     // Mapping to store capital calls per account
-    mapping(address => mapping(uint256 => AccountCapitalCall)) public accountCapitalCalls;
+    mapping(address => mapping(uint16 => AccountCapitalCall)) public accountCapitalCalls;
     uint256 public totalCalled = 0; // Total amount of capital called
-    uint256 public capitalCallsCount = 0; // Counter for capital calls made
 
-    event CapitalCallAdded(uint256 callId, uint256 amount, string drawdownType, uint256 time);
+    event CapitalCallAdded(uint256 callId, uint256 amount, string drawdownType, uint32 time);
     event AccountCapitalCallDone(uint256 callId, address account);
     event AccountCapitalCallFailed(uint256 callId, address account);
 
@@ -49,13 +48,12 @@ contract CapitalCalls {
      * @param time The creation timestamp of the capital call.
      * @return callId The ID of the newly created capital call.
      */
-    function addCapitalCall(uint256 amount, string memory drawdownType, uint256 time) public returns (uint256) {
-        // @todo capitalCalls can probably just be an array
-        capitalCalls[capitalCallsCount] = CapitalCall(amount, drawdownType, time);
-        emit CapitalCallAdded(capitalCallsCount, amount, drawdownType, time);
+    function _addCapitalCall(uint256 amount, string memory drawdownType, uint32 time) internal returns (uint16) {
+        capitalCalls.push(CapitalCall(amount, drawdownType, time));
 
-        capitalCallsCount++;
-        return capitalCallsCount - 1;
+        uint16 callId = uint16(capitalCalls.length - 1);
+        emit CapitalCallAdded(callId, amount, drawdownType, time);
+        return callId;
     }
 
     /**
@@ -64,12 +62,12 @@ contract CapitalCalls {
      * @param callId The ID of the capital call.
      * @param account The account address participating in the capital call.
      */
-    function capitalCallFailed(uint256 callId, address account) public {
+    function _capitalCallFailed(uint16 callId, address account) internal {
         AccountCapitalCall storage acc = accountCapitalCalls[account][callId];
         require(acc.accountType == AccountType.GP || acc.accountType == AccountType.LP, "Invalid account type.");
 
         acc.hasFailed = true;
-        acc.timestamp = block.timestamp;
+        acc.timestamp = uint32(block.timestamp);
 
         emit AccountCapitalCallFailed(callId, account);
     }
@@ -82,7 +80,7 @@ contract CapitalCalls {
      * @param amount The amount for the account's capital call.
      * @param accountType The type of the account (GP or LP).
      */
-    function addAccountCapitalCall(uint256 callId, address account, uint256 amount, AccountType accountType) public {
+    function _addAccountCapitalCall(uint16 callId, address account, uint256 amount, AccountType accountType) internal {
         require(accountType == AccountType.GP || accountType == AccountType.LP, "Invalid account type.");
 
         accountCapitalCalls[account][callId] = AccountCapitalCall({

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.18;
 
-// @todo use trusted library for date/time calculations
+// This library is actually maintained, gas efficient and well designed.
 import "lib/BokkyPooBahsDateTimeLibrary/contracts/BokkyPooBahsDateTimeLibrary.sol";
 
 /**
@@ -16,10 +16,17 @@ contract InterestPayments {
         uint256 total; // Total accumulated interest
     }
 
-    uint8 private constant ANNUAL_COMPOUNDING = 1;
-    uint8 private constant QUARTERLY_COMPOUNDING = 2;
+    enum CompoundingPeriod {
+        ANNUAL_COMPOUNDING,
+        QUARTERLY_COMPOUNDING
+    }
 
     InterestEntry[] private interestEntries;
+    CompoundingPeriod public compoundingInterval;
+
+    constructor(CompoundingPeriod _compoundingInterval) {
+        compoundingInterval = _compoundingInterval;
+    }
 
     /**
      * @dev Adds an inflow of funds and updates the compounding interest calculations.
@@ -30,11 +37,11 @@ contract InterestPayments {
      * @param cp Compounding period - either ANNUAL_COMPOUNDING or QUARTERLY_COMPOUNDING
      * @return The updated total capital after the inflow
      */
-    function _addInflow(uint256 amount, uint256 scale, uint256 interestRate, uint32 time, uint8 cp)
+    function _addInflow(uint256 amount, uint256 scale, uint256 interestRate, uint32 time, CompoundingPeriod cp)
         internal
         returns (uint256)
     {
-        (uint256 dt, uint256 capital, uint256 d, uint256 tcf) = _computeCompounding(cp, scale, interestRate, time);
+        (uint32 dt, uint256 capital, uint256 d, uint256 tcf) = _computeCompounding(cp, scale, interestRate, time);
 
         if (dt > 0) {
             uint256 od = convertEncodedTime(dt);
@@ -61,7 +68,7 @@ contract InterestPayments {
      * @param cp Compounding period - either ANNUAL_COMPOUNDING or QUARTERLY_COMPOUNDING
      * @return A tuple containing the remaining amount to be withdrawn, the capital paid, and the interest paid.
      */
-    function _addOutflow(uint256 amount, uint256 scale, uint256 interestRate, uint32 time, uint8 cp)
+    function _addOutflow(uint256 amount, uint256 scale, uint256 interestRate, uint32 time, CompoundingPeriod cp)
         internal
         returns (uint256, uint256, uint256)
     {
@@ -72,7 +79,7 @@ contract InterestPayments {
         uint256 remainingAmount = amount;
 
         if (dt > 0 && tcf > 0) {
-            uint256 delta = convertEncodedTime(time) - convertEncodedTime(dt);
+            uint32 delta = uint32(convertEncodedTime(time) - convertEncodedTime(dt));
             tcf += d * delta;
 
             if (amount <= capital) {
@@ -111,13 +118,13 @@ contract InterestPayments {
      * @param time The UNIX timestamp at the time of computation.
      * @return A tuple containing the last interest payment date, the capital, the daily interest, and the total capital.
      */
-    function _computeCompounding(uint8 cp, uint256 scale, uint256 interestRate, uint32 time)
+    function _computeCompounding(CompoundingPeriod cp, uint256 scale, uint256 interestRate, uint32 time)
         internal
         returns (uint32, uint256, uint256, uint256)
     {
-        if (cp == ANNUAL_COMPOUNDING) {
+        if (cp == CompoundingPeriod.ANNUAL_COMPOUNDING) {
             return _compoundAnnual(scale, interestRate, time);
-        } else if (cp == QUARTERLY_COMPOUNDING) {
+        } else if (cp == CompoundingPeriod.QUARTERLY_COMPOUNDING) {
             return _compoundQuarterly(scale, interestRate, time);
         } else {
             revert("Invalid compounding period");
@@ -126,21 +133,23 @@ contract InterestPayments {
 
     /**
      * @notice Determines the UNIX timestamp of the quarter in which the given timestamp occurs.
-     * @param _timestamp The UNIX timestamp to compute the quarter for.
+     * @param timestamp The UNIX timestamp to compute the quarter for.
      * @return The UNIX timestamp representing the beginning of the quarter.
      */
-    function _getQuarter(uint256 _timestamp) private pure returns (uint256) {
-        uint256 year = BokkyPooBahsDateTimeLibrary.getYear(_timestamp);
+    function _getQuarter(uint256 timestamp) private pure returns (uint256) {
+        uint256 year = BokkyPooBahsDateTimeLibrary.getYear(timestamp);
         uint256 q1 = BokkyPooBahsDateTimeLibrary.timestampFromDate(year, 1, 1);
         uint256 q2 = BokkyPooBahsDateTimeLibrary.timestampFromDate(year, 4, 1);
         uint256 q3 = BokkyPooBahsDateTimeLibrary.timestampFromDate(year, 7, 1);
         uint256 q4 = BokkyPooBahsDateTimeLibrary.timestampFromDate(year, 10, 1);
 
-        if (_timestamp < q2) {
+        if (timestamp < q2) {
             return q1;
-        } else if (_timestamp < q3) {
+        } 
+        if (timestamp < q3) {
             return q2;
-        } else if (_timestamp < q4) {
+        } 
+        if (timestamp < q4) {
             return q3;
         }
         return q4;
@@ -151,18 +160,18 @@ contract InterestPayments {
      * @param timestamp The UNIX timestamp to compute the next quarter for.
      * @return The UNIX timestamp representing the beginning of the next quarter.
      */
-    function _nextQuarter(uint256 timestamp) public pure returns (uint256) {
-        uint256 year = BokkyPooBahsDateTimeLibrary.getYear(timestamp);
-        uint256 month = BokkyPooBahsDateTimeLibrary.getMonth(timestamp);
+    function _nextQuarter(uint32 timestamp) public pure returns (uint32) {
+        uint16 year = uint16(BokkyPooBahsDateTimeLibrary.getYear(timestamp));
+        uint8 month = uint8(BokkyPooBahsDateTimeLibrary.getMonth(timestamp));
 
         if (month == 1) {
-            return BokkyPooBahsDateTimeLibrary.timestampFromDate(year, 4, 1);
+            return uint32(BokkyPooBahsDateTimeLibrary.timestampFromDate(year, 4, 1));
         } else if (month == 4) {
-            return BokkyPooBahsDateTimeLibrary.timestampFromDate(year, 7, 1);
+            return uint32(BokkyPooBahsDateTimeLibrary.timestampFromDate(year, 7, 1));
         } else if (month == 7) {
-            return BokkyPooBahsDateTimeLibrary.timestampFromDate(year, 10, 1);
+            return uint32(BokkyPooBahsDateTimeLibrary.timestampFromDate(year, 10, 1));
         } else if (month == 10) {
-            return BokkyPooBahsDateTimeLibrary.timestampFromDate(year + 1, 1, 1);
+            return uint32(BokkyPooBahsDateTimeLibrary.timestampFromDate(year + 1, 1, 1));
         } else {
             revert("Invalid time");
         }
@@ -173,7 +182,7 @@ contract InterestPayments {
      * @param timestamp The UNIX timestamp to be converted.
      * @return The number of days since the UNIX epoch.
      */
-    function convertEncodedTime(uint256 timestamp) public pure returns (uint256) {
+    function convertEncodedTime(uint32 timestamp) public pure returns (uint256) {
         return timestamp / (24 * 60 * 60);
     }
 
@@ -190,11 +199,11 @@ contract InterestPayments {
     {
         (uint32 dt, uint256 capital, uint256 d, uint256 tcf) = getLastInterestEntry();
         if (dt > 0) {
-            uint256 od = convertEncodedTime(dt);
-            uint256 nd = convertEncodedTime(time);
+            uint16 od = uint16(convertEncodedTime(dt));
+            uint16 nd = uint16(convertEncodedTime(time));
 
             if (nd > od) {
-                uint256 delta = nd - od;
+                uint16 delta = nd - od;
                 uint256 ai = d * delta;
                 tcf = tcf + ai;
                 d = ((tcf * interestRate) / scale) / 1000;
@@ -218,8 +227,8 @@ contract InterestPayments {
     {
         (uint32 dt, uint256 capital, uint256 d, uint256 tcf) = getLastInterestEntry();
         if (dt > 0) {
-            uint256 od = convertEncodedTime(dt);
-            uint256 nd = convertEncodedTime(time);
+            uint32 od = uint32(convertEncodedTime(dt));
+            uint32 nd = uint32(convertEncodedTime(time));
 
             while (od < nd) {
                 od = _nextQuarter(od);

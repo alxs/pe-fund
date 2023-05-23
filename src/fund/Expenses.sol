@@ -8,7 +8,7 @@ pragma solidity 0.8.18;
 contract Expenses {
     struct Expense {
         uint256 amount; // The expense amount
-        uint256 timestamp; // The time when the expense occurred
+        uint32 timestamp; // The time when the expense occurred
         string expenseType; // The type of expense
     }
 
@@ -37,7 +37,7 @@ contract Expenses {
      * @param timestamp The time when the expense occurred.
      * @param expenseType A string denoting the type of the expense.
      */
-    function chargeExpense(uint256 amount, uint256 timestamp, string memory expenseType) public {
+    function chargeExpense(uint256 amount, uint32 timestamp, string memory expenseType) public {
         Expense memory newExpense = Expense({amount: amount, timestamp: timestamp, expenseType: expenseType});
 
         expenses.push(newExpense);

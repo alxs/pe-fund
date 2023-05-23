@@ -11,7 +11,7 @@ contract FeeStorage {
     struct Fee {
         uint8 fee; // Fee amount.
         uint256 price; // Price at the time of fee imposition.
-        uint256 timestamp; // Timestamp when the fee was imposed.
+        uint32 timestamp; // Timestamp when the fee was imposed.
     }
 
     // Map to store all fees.
@@ -24,8 +24,9 @@ contract FeeStorage {
      * @param price Price at the time of fee imposition.
      * @param timestamp When the fee was imposed.
      */
-    function _addFee(uint8 fee, uint16 id, uint256 price, uint256 timestamp) internal {
-        // @todo require that the fee is not already set
+    function _addFee(uint8 fee, uint16 id, uint256 price, uint32 timestamp) internal {
+        require(fees[id].timestamp == 0, "Fee already set");
+
         fees[id] = Fee(fee, price, timestamp);
         ++totalFees;
     }

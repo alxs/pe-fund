@@ -28,7 +28,7 @@ contract Redemptions {
     struct RedemptionData {
         address account;
         uint256 amount;
-        uint256 time;
+        uint32 time;
         RedemptionStatus status;
     }
 
@@ -41,7 +41,7 @@ contract Redemptions {
      * @param amount The amount to be redeemed
      * @param time The timestamp when the redemption request was made
      */
-    function addRedemption(address account, uint256 amount, uint256 time) public virtual {
+    function addRedemption(address account, uint256 amount, uint32 time) public virtual {
         require(redemptions[account].status != RedemptionStatus.REDEMPTION_BLOCKED, "Commit Not Allowed");
         redemptions[account] = RedemptionData(account, amount, time, RedemptionStatus.REDEMPTION_PENDING);
     }
@@ -51,7 +51,7 @@ contract Redemptions {
      * @param account The address requesting the cancellation
      * @param time The timestamp when the redemption cancellation request was made
      */
-    function cancelRedemption(address account, uint256 time) public virtual {
+    function cancelRedemption(address account, uint32 time) public virtual {
         _updateRedemption(account, time, RedemptionStatus.REDEMPTION_CANCELLED);
     }
 
@@ -60,7 +60,7 @@ contract Redemptions {
      * @param account The address for which the redemption request is approved
      * @param time The timestamp when the redemption approval was made
      */
-    function approveRedemption(address account, uint256 time) public virtual {
+    function approveRedemption(address account, uint32 time) public virtual {
         _updateRedemption(account, time, RedemptionStatus.REDEMPTION_APPROVED);
         totalRedemptions += redemptions[account].amount;
     }
@@ -70,7 +70,7 @@ contract Redemptions {
      * @param account The address for which the redemption request is rejected
      * @param time The timestamp when the redemption rejection was made
      */
-    function rejectRedemption(address account, uint256 time) public virtual {
+    function rejectRedemption(address account, uint32 time) public virtual {
         _updateRedemption(account, time, RedemptionStatus.REDEMPTION_REJECT);
     }
 
@@ -82,7 +82,7 @@ contract Redemptions {
      * @param time The new time for the redemption.
      * @param newStatus The new status for the redemption.
      */
-    function _updateRedemption(address account, uint256 time, RedemptionStatus newStatus) private {
+    function _updateRedemption(address account, uint32 time, RedemptionStatus newStatus) private {
         // Load the redemption from storage, this is a reference to the state variable
         RedemptionData storage redemption = redemptions[account];
 
