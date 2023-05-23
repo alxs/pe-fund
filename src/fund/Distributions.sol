@@ -16,7 +16,7 @@ contract Distributions {
     mapping(uint32 => Distribution) public distributions;
 
     // Tally of distributions made
-    uint32 public distributionsCount;
+    uint16 public distributionsCount;
 
     // Struct encapsulating properties of a distribution
     struct Distribution {
@@ -33,21 +33,12 @@ contract Distributions {
      * @param time The timestamp associated with the distribution
      * @return The ID assigned to the new distribution
      */
-    function addDistribution(uint256 amount, string memory distributionType, uint256 time) public returns (uint32) {
+    function _addDistribution(uint256 amount, string memory distributionType, uint32 time) internal returns (uint16) {
         distributions[distributionsCount] =
             Distribution({amount: amount, distributionType: distributionType, time: time});
 
         distributionsCount++;
         return distributionsCount - 1;
-    }
-
-    /**
-     * @notice Defines the total distribution value
-     * @dev Replaces the current totalDistribution value with the input parameter
-     * @param value The proposed total distribution volume
-     */
-    function setTotalDistribution(uint256 value) public {
-        totalDistribution = value;
     }
 
     /**
@@ -60,11 +51,11 @@ contract Distributions {
      * @param amount The volume to be distributed
      * @param scale The proportion of the distribution
      */
-    function processDistribution(
+    function _processDistribution(
         IFundToken token,
         string calldata distributionType,
-        uint256 time,
-        uint32 distId,
+        uint32 time,
+        uint16 distId,
         uint256 amount,
         uint256 scale
     ) internal {

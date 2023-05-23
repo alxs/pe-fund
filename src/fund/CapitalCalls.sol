@@ -31,10 +31,10 @@ contract CapitalCalls {
         bool hasFailed; // Flag indicating if the capital call has failed
     }
 
-    uint256 public totalCalled = 0; // Total number of capital calls made
     mapping(uint256 => CapitalCall) public capitalCalls; // Mapping to store capital calls
     // Mapping to store capital calls per account
     mapping(address => mapping(uint256 => AccountCapitalCall)) public accountCapitalCalls;
+    uint256 public totalCalled = 0; // Total amount of capital called
     uint256 public capitalCallsCount = 0; // Counter for capital calls made
 
     event CapitalCallAdded(uint256 callId, uint256 amount, string drawdownType, uint256 time);
@@ -55,73 +55,7 @@ contract CapitalCalls {
         emit CapitalCallAdded(capitalCallsCount, amount, drawdownType, time);
 
         capitalCallsCount++;
-        totalCalled++;
-
         return capitalCallsCount - 1;
-    }
-
-    /**
-     * @dev Handles the finalization of a capital call.
-     * This function should be called after the capital call has been satisfied.
-     * The function burns the necessary amount of commit tokens from the account's balance and mints an equal amount of fund tokens.
-     *
-     * Requirements:
-     * - The account type must be either GP or LP.
-     * - The account must have a sufficient balance of the relevant commit tokens.
-     *
-     * @param callId The ID of the capital call.
-     * @param account The address of the account satisfying the capital call.
-     * @param price The conversion price from commit tokens to fund tokens.
-     * @param gpCommitToken The GP commit token.
-     * @param gpFundToken The GP fund token.
-     * @param lpCommitToken The LP commit token.
-     * @param lpFundToken The LP fund token.
-     */
-    function capitalCallDone(
-        uint256 callId,
-        address account,
-        uint256 price,
-        IFundToken gpCommitToken,
-        IFundToken gpFundToken,
-        IFundToken lpCommitToken,
-        IFundToken lpFundToken
-    ) public {
-        // Access the account's capital call info using the account address and call ID
-        AccountCapitalCall storage acc = accountCapitalCalls[account][callId];
-
-        // Ensure the account type is either GP or LP
-        require(acc.accountType == AccountType.GP || acc.accountType == AccountType.LP, "Invalid account type.");
-
-        // Determine which pair of commit and fund tokens to use based on the account type
-        IFundToken commitToken;
-        IFundToken fundToken;
-        if (acc.accountType == AccountType.GP) {
-            commitToken = gpCommitToken;
-            fundToken = gpFundToken;
-        } else {
-            // acc.accountType == AccountType.LP
-            commitToken = lpCommitToken;
-            fundToken = lpFundToken;
-        }
-
-        // Calculate the amount of tokens to burn/mint
-        uint256 tokenAmount = acc.amount / price;
-
-        // Ensure the account has enough commit tokens to burn
-        require(commitToken.balanceOf(account) >= tokenAmount, "Insufficient commit token balance.");
-
-        // Burn commit tokens from the account's balance
-        commitToken.transferFrom(account, address(this), tokenAmount);
-
-        // Mint an equal amount of fund tokens to the account
-        fundToken.transfer(account, tokenAmount);
-
-        // Mark the capital call as done and update the timestamp
-        acc.isDone = true;
-        acc.timestamp = block.timestamp;
-
-        // Emit an event to signal that the capital call has been finalized
-        emit AccountCapitalCallDone(callId, account);
     }
 
     /**

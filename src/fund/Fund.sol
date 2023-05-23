@@ -32,6 +32,7 @@ contract Fund is
     InterestPayments
 {
     struct Dates {
+        // Save variables in a struct to avoid stack too deep error
         uint32 initialClosing;
         uint32 finalClosing;
         uint32 commitmentDate;
@@ -49,7 +50,6 @@ contract Fund is
 
     string public name;
     uint8 public scale;
-    uint256 public size;
     uint256 public mgtFee;
     Dates public dates;
 
@@ -101,18 +101,19 @@ contract Fund is
         _setupRole(FUND_ADMIN, msg.sender);
     }
 
-    function _initTokens() public onlyRole(FUND_ADMIN) {
+    function _initTokens(address usdc) public onlyRole(FUND_ADMIN) {
         require(address(gpCommitToken) == address(0), "Tokens already initialized");
+        // @todo check everywhere else for initialisation or find a better pattern
 
         gpCommitToken =
-        new FundToken(registry, msg.sender, true, string.concat(name, " - GP Commit Token"), string.concat(name, "_GPCT"));
+        new FundToken(registry, usdc, msg.sender, true, string.concat(name, " - GP Commit Token"), string.concat(name, "_GPCT"));
         gpFundToken =
-        new FundToken(registry, msg.sender, false,string.concat(name, " - GP Fund Token"), string.concat(name, "_GFT"));
+        new FundToken(registry, usdc, msg.sender, false,string.concat(name, " - GP Fund Token"), string.concat(name, "_GFT"));
 
         lpCommitToken =
-        new FundToken(registry, msg.sender, true, string.concat(name, " - LP Commit Token"), string.concat(name, "_LPCT"));
+        new FundToken(registry, usdc,msg.sender, true, string.concat(name, " - LP Commit Token"), string.concat(name, "_LPCT"));
         lpFundToken =
-        new FundToken(registry, msg.sender, false,   string.concat(name, " - LP Fund Token"), string.concat(name, "_LFT"));
+        new FundToken(registry, usdc, msg.sender, false,   string.concat(name, " - LP Fund Token"), string.concat(name, "_LFT"));
     }
 
     /**
@@ -250,9 +251,18 @@ contract Fund is
     }
 
     /**
-     * @notice Allows a user to cancel a commit.
+     * @dev Approves multiple LP commitments.
+     * @param accounts Array of account addresses to approve.
+     * @param time Approval timestamp.
+     */
+    function approveCommits(address[] calldata accounts, uint256 time) external onlyRole(FUND_ADMIN) {
+        _approveLpCommitments(accounts, time, lpCommitToken);
+    }
+
+    /**
+     * @notice Allows the fund admin to cancel a commit.
      * @dev This function cancels the commitment for the user.
-     * @param account The address of the user cancelling the commit.
+     * @param account Address of the account for which the commit will be canceled.
      * @param time The time of the commit to cancel.
      */
     function cancelCommit(address account, uint256 time) public onlyRole(FUND_ADMIN) {
@@ -289,14 +299,14 @@ contract Fund is
         // Validate the amount against remaining committed capital
         uint256 totalCommitted = totalCommittedLp + totalCommittedGp;
         uint256 left = totalCommitted - totalCalled;
-        require(left >= amount, "FundError: Insufficient Commits");
+        require(left >= amount, "FundError: Insufficient commits");
 
         // Record the capital call
         callId = addCapitalCall(amount, drawdownType, time);
 
         // Scale the requested amount to share among LPs and GPs
         uint256 scaledAmount = amount * scale;
-        require(scaledAmount / totalCommitted > 0, "FundError: Scale Overflow");
+        require(scaledAmount / totalCommitted > 0, "FundError: Scale overflow");
         uint256 scaledShare = scaledAmount / totalCommitted;
 
         // Compute and assign the share for each GP
@@ -304,7 +314,7 @@ contract Fund is
             Commit memory gpCommit = gpCommitments[gpAccounts[i]];
             uint256 ss = scaledShare * gpCommit.amount;
             uint256 share = ss / scale;
-            require(share != 0, "FundError: Invalid Share");
+            require(share != 0, "FundError: Invalid share");
 
             addAccountCapitalCall(callId, gpAccounts[i], share, AccountType.GP);
         }
@@ -313,9 +323,9 @@ contract Fund is
         for (uint256 i = 0; i < lpAccounts.length; i++) {
             Commit memory lpCommit = lpCommitments[lpAccounts[i]];
             uint256 ss = scaledShare * lpCommit.amount;
-            require(ss / scale > 0, "FundError: Scale Overflow");
+            require(ss / scale > 0, "FundError: Scale overflow");
             uint256 share = ss / scale;
-            require(share != 0, "FundError: Invalid Share");
+            require(share != 0, "FundError: Invalid share");
 
             addAccountCapitalCall(callId, lpAccounts[i], share, AccountType.LP);
         }
@@ -334,13 +344,65 @@ contract Fund is
      */
     function chargeManagementFee() public onlyRole(FUND_ADMIN) {
         // Record the current block timestamp
-        uint256 time = block.timestamp;
+        uint32 time = uint32(block.timestamp);
 
         // Record the fee request
-        uint256 id = addFeeRequest(managementFee, time);
+        uint16 id = addFeeRequest(managementFee, time);
 
         // Trigger the charge of the management fee
         lpCommitToken.chargeManagementFee(managementFee, id, price, time);
+    }
+    /**
+     * @dev Handles the finalization of a capital call.
+     * This function should be called after the capital call has been satisfied.
+     * The function burns the necessary amount of commit tokens from the account's balance and mints an equal amount of fund tokens.
+     *
+     * Requirements:
+     * - The account type must be either GP or LP.
+     * - The account must have a sufficient balance of the relevant commit tokens.
+     *
+     * @param callId The ID of the capital call.
+     * @param account The address of the account satisfying the capital call.
+     * @param price The conversion price from commit tokens to fund tokens.
+     */
+    function capitalCallDone(uint256 callId, address account, uint256 price) public {
+        // @todo declare the tokens in a base class and compartimentalize the logic
+        // Access the account's capital call info using the account address and call ID
+        AccountCapitalCall storage acc = accountCapitalCalls[account][callId];
+
+        // Ensure the account type is either GP or LP
+        require(acc.accountType == AccountType.GP || acc.accountType == AccountType.LP, "Invalid account type.");
+
+        // Determine which pair of commit and fund tokens to use based on the account type
+        IFundToken commitToken;
+        IFundToken fundToken;
+        if (acc.accountType == AccountType.GP) {
+            commitToken = gpCommitToken;
+            fundToken = gpFundToken;
+        } else {
+            // acc.accountType == AccountType.LP
+            commitToken = lpCommitToken;
+            fundToken = lpFundToken;
+        }
+
+        // Calculate the amount of tokens to burn/mint
+        uint256 tokenAmount = acc.amount / price;
+
+        // Ensure the account has enough commit tokens to burn
+        require(commitToken.balanceOf(account) >= tokenAmount, "Insufficient commit token balance.");
+
+        // Burn commit tokens from the account's balance
+        commitToken.burnFrom(account, tokenAmount);
+
+        // Mint an equal amount of fund tokens to the account
+        fundToken.mint(account, tokenAmount);
+
+        // Mark the capital call as done and update the timestamp
+        acc.isDone = true;
+        acc.timestamp = block.timestamp;
+
+        // Emit an event to signal that the capital call has been finalized
+        emit AccountCapitalCallDone(callId, account);
     }
 
     /**
@@ -355,9 +417,8 @@ contract Fund is
      */
     function distribute(uint256 amount, string calldata distributionType, uint32 time) public onlyRole(FUND_ADMIN) {
         // Record the distribution and update total distribution
-        uint32 distId = addDistribution(amount, distributionType, time);
-        uint256 newTotal = totalDistribution + amount;
-        setTotalDistribution(newTotal);
+        uint16 distId = _addDistribution(amount, distributionType, time);
+        totalDistribution += amount;
 
         // Set carried interest
         uint256 carry = carriedInterest;
@@ -376,12 +437,12 @@ contract Fund is
         uint256 totalCatchup = gpCatchup;
         if (distributionAmount <= totalCatchup) {
             if (lpDist > 0) {
-                processDistribution(lpFundToken, distributionType, time, distId, lpDist, scale);
+                _processDistribution(lpFundToken, distributionType, time, distId, lpDist, scale);
                 addLpReturn(lpDist);
             }
 
             if (distributionAmount > 0) {
-                processDistribution(gpFundToken, distributionType, time, distId, distributionAmount, scale);
+                _processDistribution(gpFundToken, distributionType, time, distId, distributionAmount, scale);
                 addGpReturn(distributionAmount);
                 setGpCatchup(totalCatchup - distributionAmount);
             }
@@ -400,25 +461,25 @@ contract Fund is
         gpDist += gpSplit;
         lpDist += distributionAmount - gpSplit;
         if (gpDist > 0) {
-            processDistribution(gpFundToken, distributionType, time, distId, gpDist, scale);
+            _processDistribution(gpFundToken, distributionType, time, distId, gpDist, scale);
             addGpReturn(gpDist);
         }
 
         if (lpDist > 0) {
-            processDistribution(lpFundToken, distributionType, time, distId, lpDist, scale);
+            _processDistribution(lpFundToken, distributionType, time, distId, lpDist, scale);
             addLpReturn(lpDist);
         }
     }
 
     /**
-     * @notice Allows an account to redeem tokens.
+     * @notice Adds a new redemption.
      * @dev Checks if the account is compliant and adds a redemption request.
      *      The function does not execute the redemption.
      * @param account The address of the account requesting the redemption.
      * @param amount The amount of tokens to be redeemed in wei.
      * @param time The timestamp of the redemption request.
      */
-    function redeem(address account, uint256 amount, uint256 time) public {
+    function redeem(address account, uint256 amount, uint256 time) public onlyRole(FUND_ADMIN) {
         // Validate the compliance of the account
         require(registry.isCompliant(account), "Account is not compliant");
 

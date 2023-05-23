@@ -8,19 +8,26 @@ import "../src/compliance/ComplianceRegistry.sol";
 contract FundTest is Test {
     Fund fund;
     ComplianceRegistry registry;
+    IERC20 usdc;
 
     address owner;
     address kycAdmin;
-    address complianceAdmin;
+    address amlAdmin;
+    address compliantAccount;
 
     function setUp() external {
         // generate addresses
         owner = vm.addr(1);
         kycAdmin = vm.addr(2);
-        complianceAdmin = vm.addr(3);
+        amlAdmin = vm.addr(3);
+        compliantAccount = vm.addr(4);
 
-        // deploy registry
-        registry = new ComplianceRegistry(kycAdmin, complianceAdmin);
+        // deploy registry and make compliantAccount compliant
+        registry = new ComplianceRegistry(kycAdmin, amlAdmin);
+        vm.prank(kycAdmin);
+        registry.setKycStatus(compliantAccount, uint32(block.timestamp + 30 days), ComplianceRegistry.Status.Compliant);
+        vm.prank(amlAdmin);
+        registry.setAmlStatus(compliantAccount, uint32(block.timestamp + 30 days), ComplianceRegistry.Status.Compliant);
 
         // deploy fund
         fund = new Fund({
@@ -41,7 +48,8 @@ contract FundTest is Test {
             managementFee_: 2 // management fee
         });
 
-        fund._initTokens();
+        // fund._initTokens(usdc);
+        // @todo
     }
 
     function test_commitment() public {
@@ -115,18 +123,17 @@ contract FundTest is Test {
         // - amount: 1000 * fund.blockSize() // example blockSize is 1000
         // - time: 1635772800 (2022-11-01 18:00:00)
 
-        address account = address(0x1234567890123456789012345678901234567890);
         uint256 amount = 1000 * fund.blockSize();
         uint256 time = 1635772800;
 
         // Get the initial GP commit token balance
-        uint256 initialBalance = fund.gpCommitToken().balanceOf(account);
+        uint256 initialBalance = fund.gpCommitToken().balanceOf(compliantAccount);
 
         // Call the issueGpCommit function with the specified parameters
-        fund.issueGpCommit(account, amount, time);
+        fund.issueGpCommit(compliantAccount, amount, time);
 
         // Obtain the GP commit token balance after issuance
-        uint256 newBalance = fund.gpCommitToken().balanceOf(account);
+        uint256 newBalance = fund.gpCommitToken().balanceOf(compliantAccount);
 
         // Assert that the new balance has increased by the amount
         assertEq(newBalance, initialBalance + amount);
@@ -157,18 +164,18 @@ contract FundTest is Test {
     }
 
     function test_chargeManagementFee() public {
+        // @todo
         // Test that a management fee can be correctly charged to all LP contracts
         // Use mock data and contracts to simulate real funds(use Mocks).
 
         // Capture the current timestamp
-        uint256 time = block.timestamp;
+        // uint256 time = block.timestamp;
 
         // Call the chargeManagementFee function
-        fund.chargeManagementFee();
+        // fund.chargeManagementFee();
 
         // Check fee charged in all LP contracts, use mocked fund contracts and getFeeRequest function (to be implemented in the contract)
         // Verify that the management fee is correctly applied to all LP contracts (use mocks).
-        // @todo
     }
 
     function test_distribute() public {
@@ -253,6 +260,7 @@ contract FundTest is Test {
         address account = address(0x1234567890123456789012345678901234567890);
         uint256 amount = 1000 * fund.blockSize();
         uint256 time = 1635772800;
+        vm.startPrank(compliantAccount);
         fund.redeem(account, amount, time);
 
         // Call the cancelRedemption function with the specified parameters
@@ -265,7 +273,7 @@ contract FundTest is Test {
     function test_approveRedemption() public {
         // Test that a redemption can be correctly approved
 
-        // First, make a successful redemption
+        // First, add a redemption
         address account = address(0x1234567890123456789012345678901234567890);
         uint256 amount = 1000 * fund.blockSize();
         uint256 time = 1635772800;
@@ -275,7 +283,6 @@ contract FundTest is Test {
         fund.approveRedemption(account, time);
 
         // Check that the lpFundToken is burned
-        // It depends on the implementation of the lpFundToken, you may need to use address(0) as the parameter
         assertEq(fund.lpFundToken().totalSupply(), 0);
     }
 
@@ -293,6 +300,7 @@ contract FundTest is Test {
 
         // Check the user's redemption request status
         (,,, Fund.RedemptionStatus redemptionStatus) = fund.redemptions(account);
+        // @todo why are these struct members not exposed, but the ones from registry are?
         assertEq(uint256(redemptionStatus), 3);
     }
 }

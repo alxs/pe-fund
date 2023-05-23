@@ -132,6 +132,7 @@ contract Commitments {
      * @param time Cancellation timestamp.
      */
     function _cancelLpCommitment(address account, uint256 time) internal {
+        // @todo this should probably by callable by the user
         Commit storage commit = lpCommitments[account];
         require(commit.status & COMMIT_PENDING == COMMIT_PENDING, "Too late to cancel");
 
@@ -150,8 +151,7 @@ contract Commitments {
     function _approveLpCommitments(address[] calldata accounts, uint256 time, IFundToken lpCommitToken) internal {
         for (uint256 i = 0; i < accounts.length; i++) {
             Commit storage commit = lpCommitments[accounts[i]];
-            require(commit.status & COMMIT_PENDING == COMMIT_PENDING, "Commit not allowed");
-
+            require(commit.status == COMMIT_PENDING, "Commit not allowed");
             commit.timestamp = time;
             commit.status = COMMIT_APPROVED;
 

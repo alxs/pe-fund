@@ -115,9 +115,9 @@ contract Fees {
      * @param time The time of the fee request
      * @return count The current count of fee requests after the new addition
      */
-    function addFeeRequest(uint8 fee, uint256 time) internal returns (uint256 count) {
+    function addFeeRequest(uint8 fee, uint256 time) internal returns (uint16 count) {
         FeeRequest memory newFeeRequest = FeeRequest(fee, time);
         feeHistory.push(newFeeRequest);
-        return feeHistory.length - 1;
+        return uint16(feeHistory.length - 1);
     }
 }

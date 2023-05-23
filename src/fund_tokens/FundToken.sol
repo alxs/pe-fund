@@ -2,41 +2,52 @@
 pragma solidity 0.8.18;
 
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Pausable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "../interfaces/IComplianceRegistry.sol";
 import "../interfaces/IFundToken.sol";
-import "./DistributionManager.sol";
-import "./FeeManager.sol";
+import "./DistributionStorage.sol";
+import "./FeeStorage.sol";
 
 /**
  * @title FundToken
  *
- * @notice A token contract for managing an asset with dividends and fees.
+ * @notice A token contract for managing security with dividends and fees.
  *
  * The contract inherits from several libraries from OpenZeppelin,
- * as well as from two local contracts: DistributionManager and FeeManager.
+ * as well as from two local contracts: DistributionStorage and FeeStorage.
  *
- * The FundToken contract itself implements a security token that has the capability to pause,
+ * The contract itself implements a security token that has the capability to pause,
  * manage roles, mint, burn, and distribute tokens. It can also charge management fees.
  */
-contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard, DistributionManager, FeeManager {
+contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard, DistributionStorage, FeeStorage {
     IComplianceRegistry public complianceRegistry;
+    IERC20 public usdc;
 
     // Constants representing the different roles within the system
     bytes32 public constant FUND_ADMIN = keccak256("FUND_ADMIN");
     bytes32 public constant TOKEN_ADMIN = keccak256("TOKEN_ADMIN");
 
     // Mappings for storing account related data
-    mapping(address => uint256) private lastDistributionIndex;
-    mapping(address => uint256) private lastFeeIndex;
-    mapping(address => mapping(uint256 => uint256)) private snapshotBalances;
+    mapping(address => mapping(uint16 => uint256)) private snapshotBalances;
+    mapping(address => uint16) private lastFeeIndex;
+    mapping(address => uint16) private lastDistributionIndex;
+    mapping(address => mapping(uint16 => bool)) public confirmedDistributions;
+    mapping(address => mapping(uint16 => bool)) public paidFees;
+
+    uint256 public totalDistributionAmount;
 
     // Boolean indicating whether or not this is a CommitToken
     bool public isCommitToken;
 
     modifier noPendingFees(address account) {
-        require(feeBalance(account) == 0, "Account has pending fees");
+        require(getPendingFees(account) == 0, "Account has pending fees");
+        _;
+    }
+
+    modifier noPendingDistribution(address account) {
+        require(getTotalClaimableDistributions(account) == 0, "Distribution pending");
         _;
     }
 
@@ -51,12 +62,14 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard,
      */
     constructor(
         IComplianceRegistry complianceRegistry_,
+        address usdc_,
         address fundAdmin_,
         bool isCommitToken_,
         string memory name_,
         string memory symbol_
     ) ERC20(name_, symbol_) {
         complianceRegistry = complianceRegistry_;
+        usdc = IERC20(usdc_);
         isCommitToken = isCommitToken_;
 
         _setupRole(DEFAULT_ADMIN_ROLE, fundAdmin_);
@@ -67,28 +80,59 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard,
     /* ========== VIEW FUNCTIONS ========== */
 
     /**
-     * @dev Calculates the total unpaid fee balance for an account.
-     * @param account Account to calculate the balance for.
+     * @dev Function to get the total amount of fees due for an account.
+     * @param account The account to calculate fees for.
+     * @return The total amount of fees due.
      */
-    function feeBalance(address account) public view returns (uint256) {
-        uint256 totalFees = 0;
-        for (uint256 i = lastFeeIndex[account]; i < fees.length; i++) {
-            totalFees += calculateFee(account, i);
+    function getPendingFees(address account) public view returns (uint256) {
+        uint256 totalAccountFees = 0;
+        for (uint16 i = lastFeeIndex[account]; i < totalFees; i++) {
+            totalAccountFees += _calculateFee(account, i);
         }
-        return totalFees;
+        return totalAccountFees;
     }
 
     /**
-     * @dev Calculate fee amount for a specific feeId for an account.
-     * @param account Account to calculate the fee for.
-     * @param feeId ID of the fee to calculate.
+     * @dev Function to get the total claimable distributions for an account.
+     * @param account The account to calculate the claimable distributions for.
+     * @return The total amount of claimable distributions.
      */
-    function calculateFee(address account, uint256 feeId) public view returns (uint256) {
-        Fee memory fee = fees[feeId];
-        uint256 snapshotBalance = snapshotBalances[account][feeId];
-        uint256 charge = fee.fee * snapshotBalance / fee.price; // Adjusted for the updated fee calculation
+    function getTotalClaimableDistributions(address account) public view returns (uint256) {
+        uint256 totalAmount = 0;
+        for (uint16 i = lastDistributionIndex[account]; i <= totalDistributions; i++) {
+            if (confirmedDistributions[account][i]) {
+                totalAmount += _getPendingDistribution(account, i);
+            }
+        }
+        return totalAmount;
+    }
 
-        return charge;
+    /* ========== MUTATIVE ========== */
+
+    /**
+     * @dev Allows a user to pay their fees.
+     */
+    function payFees() external {
+        address account = msg.sender;
+        uint256 accountFees = getPendingFees(account);
+
+        require(usdc.transferFrom(account, address(this), accountFees), "USDC transfer failed");
+
+        lastFeeIndex[account] = totalFees;
+        emit FeePaid(account, accountFees);
+    }
+
+    /**
+     * @notice Allows a user to claim all their distributions.
+     */
+    function claimAllDistributions() external {
+        address account = msg.sender;
+        uint256 totalAmount = getTotalClaimableDistributions(account);
+
+        require(usdc.transfer(account, totalAmount), "USDC transfer failed");
+
+        lastDistributionIndex[account] = totalDistributions;
+        emit DistributionClaimed(account, totalAmount);
     }
 
     /* ========== RESTRICTED ========== */
@@ -135,7 +179,7 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard,
      * @param price The price per token
      * @param timestamp The timestamp at which the fee was charged
      */
-    function chargeManagementFee(uint8 mgtFee, uint256 id, uint256 price, uint256 timestamp)
+    function chargeManagementFee(uint8 mgtFee, uint16 id, uint256 price, uint32 timestamp)
         public
         onlyRole(FUND_ADMIN)
     {
@@ -150,7 +194,7 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard,
      * @param feeId The ID of the fee to update
      * @param accounts The accounts for which the fee status will be updated
      */
-    function markFeeAsPaid(uint32 feeId, address[] memory accounts) public onlyRole(FUND_ADMIN) {
+    function markFeeAsPaid(uint16 feeId, address[] memory accounts) public onlyRole(FUND_ADMIN) {
         // Maybe emit event here instead of ts
         for (uint256 i = 0; i < accounts.length; i++) {
             paidFees[accounts[i]][feeId] = true;
@@ -160,7 +204,7 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard,
     /**
      * @notice Distributes tokens among all token holders.
      *
-     * @dev Only an account with the DISTRIBUTOR role can call this function.
+     * @dev Only an account with the TOKEN_ADMIN role can call this function.
      * This operation is not supported for commit tokens.
      *
      * @param distId The ID of the distribution
@@ -169,23 +213,62 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard,
      * @param amount The total amount of tokens to distribute
      * @param scale The scale factor for the distribution
      */
-    function distribute(uint32 distId, string memory distType, uint256 time, uint256 amount, uint256 scale)
-        public
+    function distribute(uint16 distId, string calldata distType, uint32 time, uint256 amount, uint256 scale)
+        external
         onlyRole(TOKEN_ADMIN)
     {
         require(!isCommitToken, "This operation is not supported for commit tokens");
 
-        uint256 total = totalSupply();
-        require(total > 0, "No holders to distribute to");
+        require(totalSupply() > 0, "No holders to distribute to");
 
         uint256 scaledAmount = amount * scale;
-        uint256 scaledShare = scaledAmount / total;
+        uint256 scaledShare = scaledAmount / totalSupply();
         require(scaledShare > 0, "Invalid distribution");
 
-        _addDistribution(distId, amount, distType, time);
+        _addDistribution(distId, scaledShare, scale, distType, time);
+        totalDistributionAmount += amount;
     }
 
+    /**
+     * @dev Function to confirm a pending distribution for an account.
+     * @param account The account confirming the distribution.
+     * @param distId The ID of the distribution to confirm.
+     */
+    function confirmDistribution(address account, uint16 distId) external onlyRole(TOKEN_ADMIN) {
+        require(_getPendingDistribution(account, distId) > 0, "No pending distributions for this account and ID");
+        confirmedDistributions[account][distId] = true;
+        emit DistributionConfirmed(account, distId);
+    }
+
+    // @todo implement pause/unpause
+
     /* ========== INTERNAL ========== */
+
+    /**
+     * @dev Calculate fee amount for a specific feeId for an account.
+     * @param account Account to calculate the fee for.
+     * @param feeId ID of the fee to calculate.
+     */
+    function _calculateFee(address account, uint16 feeId) private view returns (uint256) {
+        Fee memory fee = _getFee(feeId);
+        uint256 snapshotBalance = snapshotBalances[account][feeId];
+        uint256 charge = ((snapshotBalance * fee.fee) / 1000) * fee.price;
+        return charge;
+    }
+
+    /**
+     * @dev Function to get the pending distribution amount for an account and distribution ID.
+     * @param account The account to calculate the distribution for.
+     * @param distId The ID of the distribution to calculate.
+     * @return The pending distribution amount.
+     */
+    function _getPendingDistribution(address account, uint16 distId) private view returns (uint256) {
+        uint256 snapshotBalance = snapshotBalances[account][distId];
+        Distribution memory dist = _getDistribution(distId);
+        uint256 userShare = dist.scaledShare * snapshotBalance / dist.scale;
+
+        return userShare;
+    }
 
     /**
      * @notice Internal function that is called before any transfer of tokens. @todo this includes minting and burning.
@@ -197,6 +280,7 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard,
      * @param to The address of the receiver
      * @param amount The amount of tokens to transfer
      */
+
     function _beforeTokenTransfer(address from, address to, uint256 amount)
         internal
         override
@@ -204,11 +288,12 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard,
         noPendingDistribution(from)
         nonReentrant
     {
-        require(!isCommitToken, "This operation is not supported for commit tokens");
+        // @todo
+        // require(!isCommitToken, "This operation is not supported for commit tokens");
 
         // Ensure sender and recipient are compliant
-        require(complianceRegistry.isCompliant(from), "Sender is not compliant");
-        require(complianceRegistry.isCompliant(to), "Recipient is not compliant");
+        require(complianceRegistry.isCompliant(from) || from == address(0), "Sender is not compliant");
+        require(complianceRegistry.isCompliant(to) || to == address(0), "Recipient is not compliant");
 
         _updateSnapshot(from);
         _updateSnapshot(to);
@@ -224,22 +309,24 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard,
      * @param account The account for which to update the snapshot
      */
     function _updateSnapshot(address account) private {
-        uint32 currentSnapshotIndex = totalDistributions;
-        uint256 lastSnapshotIndex = lastDistributionIndex[account];
+        uint16 currentSnapshotIndex = totalDistributions;
+        uint16 lastSnapshotIndex = lastDistributionIndex[account];
 
         if (currentSnapshotIndex != lastSnapshotIndex) {
-            uint256 balance = super.balanceOf(account);
-            snapshotBalances[account][currentSnapshotIndex] = balance;
+            snapshotBalances[account][currentSnapshotIndex] = account.balance;
             lastDistributionIndex[account] = currentSnapshotIndex;
         }
 
-        uint256 currentFeeSnapshotIndex = fees.length;
-        uint256 lastFeeSnapshotIndex = lastFeeIndex[account];
+        uint16 currentFeeSnapshotIndex = totalFees;
+        uint16 lastFeeSnapshotIndex = lastFeeIndex[account];
 
         if (currentFeeSnapshotIndex != lastFeeSnapshotIndex) {
-            uint256 balance = super.balanceOf(account);
-            snapshotBalances[account][currentFeeSnapshotIndex] = balance;
+            snapshotBalances[account][currentFeeSnapshotIndex] = account.balance;
             lastFeeIndex[account] = currentFeeSnapshotIndex;
         }
     }
+
+    event FeePaid(address indexed payer, uint256 amount);
+    event DistributionConfirmed(address indexed receiver, uint32 distributionId);
+    event DistributionClaimed(address indexed receiver, uint256 totalAmount);
 }
