@@ -174,8 +174,6 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
      * @param amount The number of tokens to mint
      */
     function mint(address recipient, uint256 amount) public onlyRole(TOKEN_ADMIN) {
-        require(complianceRegistry.isCompliant(recipient), "Recipient is not compliant");
-
         _mint(recipient, amount);
     }
 
@@ -361,16 +359,15 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
      * @param account The account for which the snapshot is being updated
      */
     function _updateSnapshot(address account) private {
-        uint256 currentDistSnapshotIndex = distributions.length - 1;
-        uint256 lastSnapshotIndex = lastDistributionIndex[account];
+        uint256 currentDistSnapshotIndex = distributions.length;
+        uint256 lastDistSnapshotIndex = lastDistributionIndex[account];
 
         // If the distribution snapshot index is outdated, update it
-        if (currentDistSnapshotIndex != lastSnapshotIndex) {
+        if (currentDistSnapshotIndex != lastDistSnapshotIndex) {
             snapshotBalances[account][currentDistSnapshotIndex] = balanceOf(account);
             lastDistributionIndex[account] = currentDistSnapshotIndex;
         }
-
-        uint256 currentFeeSnapshotIndex = fees.length - 1;
+        uint256 currentFeeSnapshotIndex = fees.length;
         uint256 lastFeeSnapshotIndex = lastFeeIndex[account];
 
         // If the fee snapshot index is outdated, update it
