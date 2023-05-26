@@ -4,7 +4,7 @@ pragma solidity ^0.8.13;
 import "forge-std/Script.sol";
 import "forge-std/console.sol";
 import "../src/fund/Fund.sol";
-import "../src/fund/Commitments.sol";
+import "../src/fund/CommitmentManager.sol";
 import "../src/compliance/ComplianceRegistry.sol";
 
 contract FundDemoScript is Script {
@@ -44,7 +44,6 @@ contract FundDemoScript is Script {
             finalClosing_: uint32(block.timestamp + 30 days),
             endDate_: uint32(block.timestamp + 60 days),
             commitmentDate_: uint32(block.timestamp + 15 days),
-            deploymentStart_: uint32(block.timestamp),
             blockSize_: 10000,
             scale_: 8,
             price_: 100,
@@ -58,22 +57,24 @@ contract FundDemoScript is Script {
         showFundDetails();
 
         // Step 2: LP1 commits
-        fund.commit(lp1, 20000000, 1677155400); // 2023-03-02 14:10:00
+        fund.addLpCommit(lp1, 20000000);
         console.log("Step 2: LP1 commitment added successfully");
         showFundDetails();
 
         // Step 3: LP2 commits
-        fund.commit(lp2, 40000000, 1677155400); // 2023-03-02 14:10:00
+        fund.addLpCommit(lp2, 40000000);
         console.log("Step 3: LP2 commitment added successfully");
         showFundDetails();
 
         // Step 4: Approve commits
-        fund.approveCommits(accounts, 1677155520); // 2023-03-02 14:12:00
+        vm.warp(block.timestamp + 1 days);
+        fund.approveCommits(accounts);
         console.log("Step 4: LP1 and LP2 commits approved");
         showFundDetails();
 
         // Step 5: Admin calls capital
-        uint16 callId = fund.capitalCall(10000000, "invest A", 1677155700); // 2023-03-02 14:15:00
+        vm.warp(block.timestamp + 1 days);
+        uint16 callId = fund.capitalCall(10000000, "invest A");
         console.log("Step 6: Capital called");
         showFundDetails();
 
@@ -115,7 +116,7 @@ contract FundDemoScript is Script {
             console.log("Account: %s (LP%s)", accounts[i], i + 1);
 
             // Print account commitments
-            (uint256 amount,, Fund.CommitState status) = fund.lpCommitments(accounts[i]);
+            (uint256 amount, Fund.CommitState status) = fund.lpCommitments(accounts[i]);
             console.log("   Commitment: %d, Status: %s", amount, commitStateToString(uint8(status)));
 
             // Print LP commit token balance

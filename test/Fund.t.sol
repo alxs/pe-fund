@@ -38,7 +38,6 @@ contract FundTest is Test {
             finalClosing_: uint32(block.timestamp + 30 days),
             endDate_: uint32(block.timestamp + 60 days),
             commitmentDate_: uint32(block.timestamp + 15 days),
-            deploymentStart_: uint32(block.timestamp),
             blockSize_: 10000, // block size
             scale_: 1, // scale
             price_: 100, // price
@@ -62,7 +61,7 @@ contract FundTest is Test {
         uint256 initialTotal = fund.totalCommittedLp();
 
         // Call the commit function with the specified parameters
-        fund.commit(address(0x1234567890123456789012345678901234567890), 1000 * fund.blockSize(), 1635772800);
+        fund.addLpCommit(address(0x1234567890123456789012345678901234567890), 1000 * fund.blockSize());
 
         // Check the new total committed LP tokens
         uint256 newTotal = fund.totalCommittedLp();
@@ -71,7 +70,11 @@ contract FundTest is Test {
         assertEq(newTotal, initialTotal + (1000 * fund.blockSize()));
     }
 
-    function testFail_commitment_notCompliant() public {
+    function testFail_commit_notCompliant() public {
+        // @todo
+    }
+
+    function testFail_addLpCommit_notCompliant() public {
         // Test that a not compliant user cannot commit
 
         // For this test, I assume the following parameters:
@@ -88,7 +91,7 @@ contract FundTest is Test {
         );
 
         // Call the commit function with the specified parameters, should fail
-        fund.commit(address(0x1234567890123456789012345678901234567890), 1000 * fund.blockSize(), 1635772800);
+        fund.addLpCommit(address(0x1234567890123456789012345678901234567890), 1000 * fund.blockSize());
     }
 
     function test_cancelCommit() public {
@@ -98,18 +101,17 @@ contract FundTest is Test {
         uint256 blockSize = fund.blockSize();
         address account = address(0x1234567890123456789012345678901234567890);
         uint256 amount = 1000 * blockSize;
-        uint32 time = 1635772800;
-        fund.commit(account, amount, time);
+        fund.addLpCommit(account, amount);
 
         // Check the user's commitment exists
-        (uint256 initialCommitAmount,,) = fund.lpCommitments(account);
+        (uint256 initialCommitAmount,) = fund.lpCommitments(account);
         assertEq(initialCommitAmount, amount);
 
         // Call the cancelCommit function with the specified parameters
-        fund.cancelCommit(account, time);
+        fund.cancelCommit(account);
 
         // Check the user's commitment is removed
-        (uint256 newCommitAmount,,) = fund.lpCommitments(account);
+        (uint256 newCommitAmount,) = fund.lpCommitments(account);
         assertEq(newCommitAmount, 0);
     }
 
@@ -122,13 +124,12 @@ contract FundTest is Test {
         // - time: 1635772800 (2022-11-01 18:00:00)
 
         uint256 amount = 1000 * fund.blockSize();
-        uint32 time = 1635772800;
 
         // Get the initial GP commit token balance
         uint256 initialBalance = fund.gpCommitToken().balanceOf(compliantAccount);
 
         // Call the issueGpCommit function with the specified parameters
-        fund.issueGpCommit(compliantAccount, amount, time);
+        fund.issueGpCommit(compliantAccount, amount);
 
         // Obtain the GP commit token balance after issuance
         uint256 newBalance = fund.gpCommitToken().balanceOf(compliantAccount);
@@ -147,33 +148,28 @@ contract FundTest is Test {
 
         uint256 amount = 9000;
         string memory drawdownType = "Example Drawdown";
-        uint32 time = 1635772800;
 
         // Call the capitalCall function with the specified parameters
-        uint16 callId = fund.capitalCall(amount, drawdownType, time);
+        uint16 callId = fund.capitalCall(amount, drawdownType);
 
         // Check the capital call data
-        (uint256 amount_, string memory drawdownType_, uint32 time_) = fund.capitalCalls(callId);
+        (uint256 amount_, string memory drawdownType_) = fund.capitalCalls(callId);
 
         // Assert that the data matches the expected values
         assertEq(amount_, amount);
         assertEq(drawdownType_, drawdownType);
-        assertEq(time_, time);
     }
 
     function test_chargeManagementFee() public {
-        // @todo
         // Test that a management fee can be correctly charged to all LP contracts
         // Use mock data and contracts to simulate real funds(use Mocks).
 
-        // Capture the current timestamp
-        // uint32 time = block.timestamp;
-
         // Call the chargeManagementFee function
-        // fund.chargeManagementFee();
+        fund.chargeManagementFee();
 
         // Check fee charged in all LP contracts, use mocked fund contracts and getFeeRequest function (to be implemented in the contract)
         // Verify that the management fee is correctly applied to all LP contracts (use mocks).
+        // @todo
     }
 
     function test_distribute() public {
@@ -189,15 +185,15 @@ contract FundTest is Test {
         uint32 time = 1635772800;
 
         // Capture initial distribution values
-        uint256 initialLpReturn = fund.getLpReturn();
-        uint256 initialGpReturn = fund.getGpReturn();
+        uint256 initialLpReturn = fund.lpReturn();
+        uint256 initialGpReturn = fund.gpReturn();
 
         // Call the distribute function with the specified parameters
         fund.distribute(amount, distributionType, time);
 
         // Check updated distribution values
-        uint256 newLpReturn = fund.getLpReturn();
-        uint256 newGpReturn = fund.getGpReturn();
+        uint256 newLpReturn = fund.lpReturn();
+        uint256 newGpReturn = fund.gpReturn();
 
         // Assert that the distributions have been updated (exact amounts depend on the logic in the distribute function)
         assert(newLpReturn > initialLpReturn);
@@ -214,13 +210,12 @@ contract FundTest is Test {
 
         address account = address(0x1234567890123456789012345678901234567890);
         uint256 amount = 1000 * fund.blockSize();
-        uint32 time = 1635772800;
 
         // Get the initial redeemable tokens
         uint256 initialRedeemableTokens = fund.lpFundToken().balanceOf(account);
 
         // Call the redeem function with the specified parameters
-        fund.redeem(account, amount, time);
+        fund.addRedemption(account, amount);
 
         // Check the new redeemable tokens
         uint256 newRedeemableTokens = fund.lpFundToken().balanceOf(account);
@@ -235,19 +230,18 @@ contract FundTest is Test {
         // First, make a successful redemption
         address account = address(0x1234567890123456789012345678901234567890);
         uint256 amount = 1000 * fund.blockSize();
-        uint32 time = 1635772800;
-        fund.redeem(account, amount, time);
+        fund.addRedemption(account, amount);
 
         // Check the user's redemption request exists
-        (, uint256 initialAmount,,) = fund.redemptions(account);
+        (, uint256 initialAmount,) = fund.redemptions(account);
         assertEq(initialAmount, amount);
 
         // Call the cancelRedemption function with the specified parameters
         // Assume msg.sender is the account owner
-        fund.cancelRedemption(account, time);
+        fund.cancelRedemption(account);
 
         // Check the user's redemption request is removed
-        (, uint256 newAmount,,) = fund.redemptions(account);
+        (, uint256 newAmount,) = fund.redemptions(account);
         assertEq(newAmount, 0);
     }
 
@@ -257,15 +251,14 @@ contract FundTest is Test {
         // First, make a successful redemption
         address account = address(0x1234567890123456789012345678901234567890);
         uint256 amount = 1000 * fund.blockSize();
-        uint32 time = 1635772800;
         vm.startPrank(compliantAccount);
-        fund.redeem(account, amount, time);
+        fund.addRedemption(account, amount);
 
         // Call the cancelRedemption function with the specified parameters
         // Assume msg.sender is not the account owner
         // You might want to use a custom modifier and a function argument
         // to simulate the msg.sender being different from the account owner
-        fund.cancelRedemption(account, time);
+        fund.cancelRedemption(account);
     }
 
     function test_approveRedemption() public {
@@ -274,11 +267,10 @@ contract FundTest is Test {
         // First, add a redemption
         address account = address(0x1234567890123456789012345678901234567890);
         uint256 amount = 1000 * fund.blockSize();
-        uint32 time = 1635772800;
-        fund.redeem(account, amount, time);
+        fund.addRedemption(account, amount);
 
         // Call the approveRedemption function with the specified parameters
-        fund.approveRedemption(account, time);
+        fund.approveRedemption(account);
 
         // Check that the lpFundToken is burned
         assertEq(fund.lpFundToken().totalSupply(), 0);
@@ -290,15 +282,14 @@ contract FundTest is Test {
         // First, make a successful redemption
         address account = address(0x1234567890123456789012345678901234567890);
         uint256 amount = 1000 * fund.blockSize();
-        uint32 time = 1635772800;
-        fund.redeem(account, amount, time);
+        fund.addRedemption(account, amount);
 
         // Call the rejectRedemption function with the specified parameters
-        fund.rejectRedemption(account, time);
+        fund.rejectRedemption(account);
 
         // Check the user's redemption request status
-        (,,, Fund.RedemptionStatus redemptionStatus) = fund.redemptions(account);
-        // @todo why are these struct members not exposed, but the ones from registry are?
+        (,, Fund.RedemptionStatus redemptionStatus) = fund.redemptions(account);
+        // For some reason these struct members are not exposed, but the ones from registry are
         assertEq(uint256(redemptionStatus), 3);
     }
 }

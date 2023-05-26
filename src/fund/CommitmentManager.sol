@@ -5,14 +5,13 @@ import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "../interfaces/IFundToken.sol";
 
 /**
- * @title Commitments
+ * @title CommitmentManager
  * @notice Implements a commitment functionality similar to a specified Rust smart contract.
  */
-contract Commitments {
+contract CommitmentManager {
     // Structure to store commitment data.
     struct Commit {
         uint256 amount;
-        uint32 timestamp;
         CommitState status;
     }
 
@@ -27,7 +26,7 @@ contract Commitments {
     }
 
     // Declare public state variables.
-    uint256 public totalPendingLpCommits;
+    uint256 public totalInPendingLpCommits;
     uint256 public totalCommittedGp;
     uint256 public totalCommittedLp;
     uint256 public blockSize;
@@ -40,11 +39,11 @@ contract Commitments {
     address[] public lpAccounts;
 
     // Event declarations.
-    event LpCommitmentAdded(address indexed account, uint256 amount, uint32 timestamp);
-    event GpCommitmentAdded(address indexed account, uint256 amount, uint32 timestamp);
-    event LpCommitmentCancelled(address indexed account, uint32 timestamp);
-    event LpCommitmentApproved(address indexed account, uint256 amount, uint32 timestamp);
-    event LpCommitmentRejected(address indexed account, uint32 timestamp);
+    event LpCommitmentAdded(address indexed account, uint256 amount);
+    event GpCommitmentAdded(address indexed account, uint256 amount);
+    event LpCommitmentCancelled(address indexed account);
+    event LpCommitmentApproved(address indexed account, uint256 amount);
+    event LpCommitmentRejected(address indexed account);
 
     /**
      * @dev Sets initial values for block size and price.
@@ -72,87 +71,79 @@ contract Commitments {
      * @dev Adds a new GP commitment.
      * @param account Address of the account.
      * @param amount Commitment amount.
-     * @param time Commitment timestamp.
      */
-    function _addGpCommitment(address account, uint256 amount, uint32 time) internal {
+    function _addGpCommitment(address account, uint256 amount) internal {
         totalCommittedGp += amount;
-        gpCommitments[account] = Commit(amount, time, CommitState.COMMIT_APPROVED);
+        gpCommitments[account] = Commit(amount, CommitState.COMMIT_APPROVED);
         gpAccounts.push(account);
-        emit GpCommitmentAdded(account, amount, time);
+        emit GpCommitmentAdded(account, amount);
     }
 
     /**
-     * @dev Adds a new LP commitment.
+     * @dev Sets an LP commitment for an account. If the commitment already exists,
+     *      it updates the amount and resets its status.
      * @param account Address of the account.
      * @param amount Commitment amount.
-     * @param time Commitment timestamp.
      */
-    function _addLpCommitment(address account, uint256 amount, uint32 time) internal {
+    function _setLpCommitment(address account, uint256 amount) internal {
         Commit storage commit = lpCommitments[account];
         if (commit.status != CommitState.COMMIT_NONE && commit.status != CommitState.COMMIT_BLOCKED) {
-            totalPendingLpCommits -= commit.amount;
+            totalInPendingLpCommits -= commit.amount;
         }
 
         if (commit.status == CommitState.COMMIT_NONE) {
-            lpCommitments[account] = Commit(amount, time, CommitState.COMMIT_PENDING);
+            lpCommitments[account] = Commit(amount, CommitState.COMMIT_PENDING);
             lpAccounts.push(account);
         } else {
             commit.amount = amount;
-            commit.timestamp = time;
             commit.status = CommitState.COMMIT_PENDING;
         }
 
-        totalPendingLpCommits += amount;
-        emit LpCommitmentAdded(account, amount, time);
+        totalInPendingLpCommits += amount;
+        emit LpCommitmentAdded(account, amount);
     }
 
     /**
      * @dev Cancels an existing LP commitment.
      * @param account Address of the account.
-     * @param time Cancellation timestamp.
      */
-    function _cancelLpCommitment(address account, uint32 time) internal {
+    function _cancelLpCommitment(address account) internal {
         Commit storage commit = lpCommitments[account];
         require(commit.status == CommitState.COMMIT_PENDING, "Too late to cancel");
 
-        commit.timestamp = time;
         commit.status = CommitState.COMMIT_CANCELLED;
 
-        totalPendingLpCommits -= commit.amount;
-        emit LpCommitmentCancelled(account, time);
+        totalInPendingLpCommits -= commit.amount;
+        emit LpCommitmentCancelled(account);
     }
 
     /**
      * @dev Approves multiple LP commitments.
      * @param accounts Array of account addresses to approve.
-     * @param time Approval timestamp.
      */
-    function _approveLpCommitments(address[] calldata accounts, uint32 time, IFundToken lpCommitToken) internal {
+    function _approveLpCommitments(address[] calldata accounts, IFundToken lpCommitToken) internal {
         for (uint256 i = 0; i < accounts.length; i++) {
             Commit storage commit = lpCommitments[accounts[i]];
             require(commit.status == CommitState.COMMIT_PENDING, "Commit not allowed");
-            commit.timestamp = time;
             commit.status = CommitState.COMMIT_APPROVED;
 
             totalCommittedLp += commit.amount;
             lpCommitToken.mint(accounts[i], commit.amount / price);
-            emit LpCommitmentApproved(accounts[i], commit.amount, time);
+            emit LpCommitmentApproved(accounts[i], commit.amount);
         }
     }
 
     /**
      * @dev Rejects multiple LP commitments.
      * @param accounts Array of account addresses to reject.
-     * @param time Rejection timestamp.
      */
-    function _rejectLpCommitments(address[] calldata accounts, uint32 time) internal {
+    function _rejectLpCommitments(address[] calldata accounts) internal {
         for (uint256 i = 0; i < accounts.length; i++) {
             Commit storage commit = lpCommitments[accounts[i]];
-            require(commit.status == CommitState.COMMIT_PENDING, "Commit not allowed");
+            require(commit.status == CommitState.COMMIT_PENDING, "Commitment must be pending");
 
-            commit.timestamp = time;
             commit.status = CommitState.COMMIT_REJECTED;
-            emit LpCommitmentRejected(accounts[i], time);
+            emit LpCommitmentRejected(accounts[i]);
         }
     }
 }
