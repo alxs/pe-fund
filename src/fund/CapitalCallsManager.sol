@@ -20,7 +20,7 @@ contract CapitalCallsManager {
         string drawdownType; // Type of drawdown as a string
     }
 
-    // Struct to represent an account's capital call
+    // Struct to represent a capital call on a specific account
     struct AccountCapitalCall {
         uint256 amount; // Amount of the capital call for the account
         AccountType accountType; // Type of the account (GP or LP)

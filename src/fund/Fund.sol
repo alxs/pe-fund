@@ -35,9 +35,9 @@ contract Fund is
     IFundToken public gpFundToken;
     IFundToken public lpFundToken;
 
+    // Fund details
     string public name;
     uint8 public scale;
-    uint256 public mgtFee;
     uint32 public initialClosing;
     uint32 public finalClosing;
     uint32 public commitmentDate;
@@ -52,7 +52,7 @@ contract Fund is
     uint256 public distributionCount;
     uint256 public totalDistributed;
 
-    // Fund details
+    // Financial data
     CompoundingPeriod public compoundingInterval;
     uint256 public blockSize;
     uint256 public price;
@@ -62,7 +62,7 @@ contract Fund is
     uint8 public gpClawback; // @todo no functionality
 
     // Event declarations
-    event Distribution(uint256 distId, string distType, uint256 amount, uint256 scale);
+    event Distribution(uint256 distId, string distType, uint256 amount, uint8 scale);
     event ManagementFee(uint8 fee, uint256 price);
 
     constructor() {
@@ -558,6 +558,7 @@ contract Fund is
     function _processDistribution(IFundToken token, string calldata distributionType, uint256 distId, uint256 amount)
         internal
     {
-        IFundToken(token).distribute(distId, distributionType, amount, scale);
+        require(distId < type(uint16).max, "Distribution ID exceeds uint16");
+        IFundToken(token).distribute(uint16(distId), distributionType, amount, scale);
     }
 }

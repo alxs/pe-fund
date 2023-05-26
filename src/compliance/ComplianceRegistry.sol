@@ -3,12 +3,13 @@ pragma solidity 0.8.18;
 
 import "openzeppelin-upgradeable/contracts/access/AccessControlUpgradeable.sol";
 import "openzeppelin-upgradeable/contracts/proxy/utils/Initializable.sol";
+import "../interfaces/IComplianceRegistry.sol";
 
 /**
  * @title ComplianceRegistry Contract
  * @notice Manages the Know Your Customer (KYC) and Anti-Money Laundering (AML) compliance status for user accounts.
  */
-contract ComplianceRegistry is Initializable, AccessControlUpgradeable {
+contract ComplianceRegistry is IComplianceRegistry, Initializable, AccessControlUpgradeable {
     // Compliance statuses
     enum Status {
         NonCompliant,

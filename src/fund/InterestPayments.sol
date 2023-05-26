@@ -11,9 +11,9 @@ import "lib/BokkyPooBahsDateTimeLibrary/contracts/BokkyPooBahsDateTimeLibrary.so
 contract InterestPayments {
     struct InterestEntry {
         uint256 timestamp; // UNIX timestamp of the entry
-        uint256 capital; // Principal amount
-        uint256 daily; // Daily interest
-        uint256 total; // Total accumulated interest
+        uint256 capital; // Compounded capital amount.
+        uint256 daily; // Daily interest rate.
+        uint256 totalCashFlow; // Total cashflow including the interest.
     }
 
     enum CompoundingPeriod {
@@ -37,7 +37,7 @@ contract InterestPayments {
      * @param cp Compounding period - either ANNUAL_COMPOUNDING or QUARTERLY_COMPOUNDING
      * @return The updated total capital after the inflow
      */
-    function _addInflow(uint256 amount, uint256 scale, uint256 interestRate, uint256 time, CompoundingPeriod cp)
+    function _addInflow(uint256 amount, uint8 scale, uint256 interestRate, uint256 time, CompoundingPeriod cp)
         internal
         returns (uint256)
     {
@@ -67,7 +67,7 @@ contract InterestPayments {
      * @param cp Compounding period - either ANNUAL_COMPOUNDING or QUARTERLY_COMPOUNDING
      * @return A tuple containing the remaining amount to be withdrawn, the capital paid, and the interest paid.
      */
-    function _addOutflow(uint256 amount, uint256 scale, uint256 interestRate, uint32 time, CompoundingPeriod cp)
+    function _addOutflow(uint256 amount, uint8 scale, uint256 interestRate, uint32 time, CompoundingPeriod cp)
         internal
         returns (uint256, uint256, uint256)
     {
@@ -132,7 +132,7 @@ contract InterestPayments {
      * @param interestRate The yearly nominal interest rate, expressed in basis points.
      * @return A tuple containing the last interest payment date, the capital, the daily interest, and the total capital.
      */
-    function _computeCompounding(CompoundingPeriod cp, uint256 scale, uint256 interestRate, uint256 timestamp)
+    function _computeCompounding(CompoundingPeriod cp, uint8 scale, uint256 interestRate, uint256 timestamp)
         private
         returns (uint256, uint256, uint256, uint256)
     {
@@ -183,7 +183,7 @@ contract InterestPayments {
      * @param timestamp The UNIX timestamp at which the compounding is performed.
      * @return A tuple containing the date of the last interest payment, the capital, the daily interest, and the total capital.
      */
-    function _compoundQuarterly(uint256 scale, uint256 interestRate, uint256 timestamp)
+    function _compoundQuarterly(uint8 scale, uint256 interestRate, uint256 timestamp)
         private
         returns (uint256, uint256, uint256, uint256)
     {
@@ -221,7 +221,7 @@ contract InterestPayments {
             return (0, 0, 0, 0);
         } else {
             InterestEntry memory entry = interestEntries[interestEntries.length - 1];
-            return (entry.timestamp, entry.capital, entry.daily, entry.total);
+            return (entry.timestamp, entry.capital, entry.daily, entry.totalCashFlow);
         }
     }
 

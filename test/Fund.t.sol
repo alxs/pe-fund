@@ -242,7 +242,7 @@ contract FundTest is Test {
         fund.addRedemption(account, amount);
 
         // Check the user's redemption request exists
-        (, uint256 initialAmount,) = fund.redemptions(account);
+        (uint256 initialAmount,,) = fund.redemptions(account);
         assertEq(initialAmount, amount);
 
         // Call the cancelRedemption function with the specified parameters
@@ -250,7 +250,7 @@ contract FundTest is Test {
         fund.cancelRedemption(account);
 
         // Check the user's redemption request is removed
-        (, uint256 newAmount,) = fund.redemptions(account);
+        (uint256 newAmount,,) = fund.redemptions(account);
         assertEq(newAmount, 0);
     }
 

@@ -28,8 +28,8 @@ contract RedemptionManager {
 
     // Redemption entry.
     struct RedemptionData {
-        address account;
         uint256 amount;
+        address account;
         RedemptionStatus status;
     }
 
@@ -52,7 +52,7 @@ contract RedemptionManager {
      */
     function _addRedemption(address account, uint256 amount) internal {
         require(redemptions[account].status != RedemptionStatus.REDEMPTION_BLOCKED, "Redemption Not Allowed");
-        redemptions[account] = RedemptionData(account, amount, RedemptionStatus.REDEMPTION_PENDING);
+        redemptions[account] = RedemptionData(amount, account, RedemptionStatus.REDEMPTION_PENDING);
         emit RedemptionAdded(account, amount);
     }
 

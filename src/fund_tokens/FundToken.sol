@@ -25,9 +25,9 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
     }
 
     struct Distribution {
-        uint256 id;
         uint256 scaledShare;
-        uint256 scale;
+        uint16 id;
+        uint8 scale;
         string distributionType;
     }
 
@@ -60,7 +60,7 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
     event FeeRequested(uint256 indexed feeId, uint8 feePm, uint256 price);
     event FeesPaid(address indexed payer, uint256 amount);
     event FeesWaived(address indexed account, uint256 upToFeeId);
-    event DistributionAdded(uint256 indexed distributionId, string distType, uint256 amount, uint256 scale);
+    event DistributionAdded(uint256 indexed distributionId, string distType, uint256 amount, uint8 scale);
     event DistributionConfirmed(address indexed receiver, uint256 distributionId);
     event DistributionClaimed(address indexed receiver, uint256 totalAmount);
 
@@ -237,7 +237,7 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
      * @param amount The total amount of tokens to distribute
      * @param scale The scale factor for the distribution
      */
-    function distribute(uint256 distId, string calldata distType, uint256 amount, uint256 scale)
+    function distribute(uint16 distId, string calldata distType, uint256 amount, uint8 scale)
         external
         onlyRole(TOKEN_ADMIN)
     {
@@ -249,7 +249,7 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
         uint256 scaledShare = scaledAmount / totalSupply();
         require(scaledShare > 0, "Invalid distribution");
 
-        distributions.push(Distribution(distId, scaledShare, scale, distType));
+        distributions.push(Distribution( scaledShare, distId,scale, distType));
         totalDistributionAmount += amount;
         emit DistributionAdded(distId, distType, amount, scale);
     }

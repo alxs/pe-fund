@@ -5,7 +5,7 @@ import "../interfaces/IFundToken.sol";
 
 /**
  * @title CommitmentManager
- * @notice Implements a commitment functionality similar to a specified Rust smart contract.
+ * @notice This contract is responsible for managing commitments in a fund context.
  */
 contract CommitmentManager {
     // Structure to store commitment data.
