@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
+pragma solidity 0.8.18;
 
 import "forge-std/Script.sol";
 import "forge-std/console.sol";
 import "../src/fund/Fund.sol";
 import "../src/fund/CommitmentManager.sol";
 import "../src/compliance/ComplianceRegistry.sol";
+import "openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
 contract FundDemoScript is Script {
     Fund fund;
@@ -20,10 +21,14 @@ contract FundDemoScript is Script {
         address fundAdmin = vm.addr(3);
         address kycAdmin = vm.addr(4);
         address amlAdmin = vm.addr(5);
+        address proxyAdmin = vm.addr(6);
         accounts[0] = lp1;
         accounts[1] = lp2;
 
-        registry = new ComplianceRegistry(kycAdmin, amlAdmin);
+        address registryImpl = address(new ComplianceRegistry());
+        TransparentUpgradeableProxy registryProxy = new TransparentUpgradeableProxy(registryImpl, proxyAdmin,  "");
+        registry = ComplianceRegistry(address(registryProxy));
+        registry.initialize(kycAdmin, amlAdmin);
         uint32 expiry = uint32(block.timestamp + 30 days);
         vm.startPrank(kycAdmin);
         registry.setKycStatus(lp1, expiry, ComplianceRegistry.Status.Compliant);
@@ -36,7 +41,10 @@ contract FundDemoScript is Script {
 
         vm.startPrank(fundAdmin);
         // Step 1: Deploy fund
-        fund = new Fund({
+        address fundImpl = address(new Fund());
+        TransparentUpgradeableProxy fundProxy = new TransparentUpgradeableProxy(fundImpl, proxyAdmin,  "");
+        fund = Fund(address(fundProxy));
+        fund.initialize({
             name_: "Demo Fund",
             registryAddress_: address(registry),
             usdc_: address(usdc),

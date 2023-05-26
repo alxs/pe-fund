@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.18;
 
-import "@openzeppelin/contracts/access/AccessControl.sol";
+import "openzeppelin-upgradeable/contracts/access/AccessControlUpgradeable.sol";
+import "openzeppelin-upgradeable/contracts/proxy/utils/Initializable.sol";
 
 /**
  * @title ComplianceRegistry Contract
  * @notice Manages the Know Your Customer (KYC) and Anti-Money Laundering (AML) compliance status for user accounts.
  */
-contract ComplianceRegistry is AccessControl {
+contract ComplianceRegistry is Initializable, AccessControlUpgradeable {
     // Compliance statuses
     enum Status {
         NonCompliant,
@@ -36,12 +37,17 @@ contract ComplianceRegistry is AccessControl {
     mapping(address => KycStatus) private kycStatuses;
     mapping(address => AmlStatus) private amlStatuses;
 
+    constructor() {
+        _disableInitializers();
+    }
+
     /**
      * @notice Assigns roles on contract deployment
      * @param _kycAdmin The address to assign the KYC_ADMIN role
      * @param _complianceAdmin The address to assign the AML_ADMIN role
      */
-    constructor(address _kycAdmin, address _complianceAdmin) {
+
+    function initialize(address _kycAdmin, address _complianceAdmin) public initializer {
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _setupRole(KYC_ADMIN, _kycAdmin);
         _setupRole(AML_ADMIN, _complianceAdmin);

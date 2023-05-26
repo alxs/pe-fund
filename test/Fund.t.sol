@@ -4,6 +4,7 @@ pragma solidity 0.8.18;
 import "forge-std/Test.sol";
 import "../src/fund/Fund.sol";
 import "../src/compliance/ComplianceRegistry.sol";
+import "openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
 contract FundTest is Test {
     Fund fund;
@@ -13,6 +14,7 @@ contract FundTest is Test {
     address owner;
     address kycAdmin;
     address amlAdmin;
+    address proxyAdmin;
     address compliantAccount;
 
     function setUp() external {
@@ -21,16 +23,23 @@ contract FundTest is Test {
         kycAdmin = vm.addr(2);
         amlAdmin = vm.addr(3);
         compliantAccount = vm.addr(4);
+        proxyAdmin = vm.addr(5);
 
         // deploy registry and make compliantAccount compliant
-        registry = new ComplianceRegistry(kycAdmin, amlAdmin);
+        address registryImpl = address(new ComplianceRegistry());
+        TransparentUpgradeableProxy registryProxy = new TransparentUpgradeableProxy(registryImpl, proxyAdmin,  "");
+        registry = ComplianceRegistry(address(registryProxy));
+        registry.initialize(kycAdmin, amlAdmin);
         vm.prank(kycAdmin);
         registry.setKycStatus(compliantAccount, uint32(block.timestamp + 30 days), ComplianceRegistry.Status.Compliant);
         vm.prank(amlAdmin);
         registry.setAmlStatus(compliantAccount, uint32(block.timestamp + 30 days), ComplianceRegistry.Status.Compliant);
 
         // deploy fund
-        fund = new Fund({
+        address fundImpl = address(new Fund());
+        TransparentUpgradeableProxy fundProxy = new TransparentUpgradeableProxy(fundImpl, proxyAdmin,  "");
+        fund = Fund(address(fundProxy));
+        fund.initialize({
             name_: "Test Fund",
             registryAddress_: address(registry),
             usdc_: address(usdc),

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.18;
 
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "../interfaces/IFundToken.sol";
 
 /**
@@ -29,8 +28,6 @@ contract CommitmentManager {
     uint256 public totalInPendingLpCommits;
     uint256 public totalCommittedGp;
     uint256 public totalCommittedLp;
-    uint256 public blockSize;
-    uint256 public price;
 
     // Mapping to track commitments from addresses.
     mapping(address => Commit) public lpCommitments;
@@ -44,16 +41,6 @@ contract CommitmentManager {
     event LpCommitmentCancelled(address indexed account);
     event LpCommitmentApproved(address indexed account, uint256 amount);
     event LpCommitmentRejected(address indexed account);
-
-    /**
-     * @dev Sets initial values for block size and price.
-     * @param blockSize_ Initial block size.
-     * @param price_ Initial price.
-     */
-    constructor(uint256 blockSize_, uint256 price_) {
-        blockSize = blockSize_;
-        price = price_;
-    }
 
     /* ========== VIEW FUNCTIONS ========== */
 
@@ -121,7 +108,7 @@ contract CommitmentManager {
      * @dev Approves multiple LP commitments.
      * @param accounts Array of account addresses to approve.
      */
-    function _approveLpCommitments(address[] calldata accounts, IFundToken lpCommitToken) internal {
+    function _approveLpCommitments(address[] calldata accounts, IFundToken lpCommitToken, uint256 price) internal {
         for (uint256 i = 0; i < accounts.length; i++) {
             Commit storage commit = lpCommitments[accounts[i]];
             require(commit.status == CommitState.COMMIT_PENDING, "Commit not allowed");

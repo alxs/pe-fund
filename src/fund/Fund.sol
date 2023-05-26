@@ -2,7 +2,9 @@
 // https://github.com/crytic/slither/wiki/Detector-Documentation#recommendation-72
 pragma solidity 0.8.18; // do not change, see ^
 
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "openzeppelin-upgradeable/contracts/access/AccessControlUpgradeable.sol";
+import "openzeppelin-upgradeable/contracts/security/PausableUpgradeable.sol";
+import "openzeppelin-upgradeable/contracts/proxy/utils/Initializable.sol";
 import "../interfaces/IComplianceRegistry.sol";
 import "../interfaces/IFundToken.sol";
 import "../fund_tokens/FundToken.sol";
@@ -17,8 +19,9 @@ import "./InterestPayments.sol";
  * The contract manages the funds and permissions of users.
  */
 contract Fund is
-    AccessControl,
-    Pausable,
+    Initializable,
+    AccessControlUpgradeable,
+    PausableUpgradeable,
     CommitmentManager,
     CapitalCallsManager,
     RedemptionManager,
@@ -49,7 +52,10 @@ contract Fund is
     uint256 public distributionCount;
     uint256 public totalDistributed;
 
+    // Fund details
     CompoundingPeriod public compoundingInterval;
+    uint256 public blockSize;
+    uint256 public price;
     uint256 public lpReturn;
     uint256 public gpReturn;
     uint256 public gpCatchup;
@@ -59,6 +65,10 @@ contract Fund is
     event Distribution(uint256 distId, string distType, uint256 amount, uint256 scale);
     event ManagementFee(uint8 fee, uint256 price);
 
+    constructor() {
+        _disableInitializers();
+    }
+
     /**
      * @param registryAddress_ Address of the compliance registry contract.
      * @param initialClosing_ Initial closing time of the fund.
@@ -67,7 +77,7 @@ contract Fund is
      * @param commitmentDate_ Commitment date of the fund.
      * @param blockSize_ Size of blocks for commits.
      */
-    constructor(
+    function initialize(
         string memory name_,
         address registryAddress_,
         address usdc_,
@@ -83,7 +93,12 @@ contract Fund is
         uint8 gpClawback_,
         uint8 carriedInterest_,
         uint8 managementFee_
-    ) CommitmentManager(blockSize_, price_) {
+    ) public initializer {
+        __AccessControl_init();
+        __Pausable_init();
+
+        blockSize = blockSize_;
+        price = price_;
         name = name_;
         registry = IComplianceRegistry(registryAddress_);
         initialClosing = initialClosing_;
@@ -104,7 +119,7 @@ contract Fund is
         _initTokens(usdc_);
     }
 
-    function _initTokens(address usdc) private {
+    function _initTokens(address usdc) private onlyInitializing {
         gpCommitToken =
         new FundToken(registry, usdc, msg.sender, true, string.concat(name, " - GP Commit Token"), string.concat(name, "_GPCT"));
         gpFundToken =
@@ -169,7 +184,7 @@ contract Fund is
      * @param accounts Array of account addresses to approve.
      */
     function approveCommits(address[] calldata accounts) external onlyRole(FUND_ADMIN) {
-        _approveLpCommitments(accounts, lpCommitToken);
+        _approveLpCommitments(accounts, lpCommitToken, price);
     }
 
     /**
@@ -249,9 +264,9 @@ contract Fund is
      *
      * @param callId The ID of the capital call.
      * @param account The address of the account satisfying the capital call.
-     * @param price The conversion price from commit tokens to fund tokens.
+     * @param callPrice The conversion price from commit tokens to fund tokens.
      */
-    function capitalCallDone(uint16 callId, address account, uint256 price) public onlyRole(FUND_ADMIN) {
+    function capitalCallDone(uint16 callId, address account, uint256 callPrice) public onlyRole(FUND_ADMIN) {
         // Access the account's capital call info using the account address and call ID
         AccountCapitalCall storage acc = accountCapitalCalls[account][callId];
 
@@ -271,7 +286,7 @@ contract Fund is
         }
 
         // Calculate the amount of tokens to burn/mint
-        uint256 tokenAmount = acc.amount / price;
+        uint256 tokenAmount = acc.amount / callPrice;
 
         // Ensure the account has enough commit tokens to burn
         require(commitToken.balanceOf(account) >= tokenAmount, "Insufficient commit token balance.");
