@@ -62,8 +62,10 @@ contract Fund is
     uint8 public gpClawback; // @todo no functionality
 
     // Event declarations
-    event Distribution(uint256 distId, string distType, uint256 amount, uint8 scale);
+    event Distribution(uint256 indexed distId, string distType, uint256 amount, uint8 scale);
     event ManagementFee(uint8 fee, uint256 price);
+
+    /* ========== INITIALISATION ========== */
 
     constructor() {
         _disableInitializers();

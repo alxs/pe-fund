@@ -38,10 +38,10 @@ contract RedemptionManager {
     uint256 public totalRedemptions;
 
     // Event declarations.
-    event RedemptionAdded(address account, uint256 amount);
-    event RedemptionApproved(address account);
-    event RedemptionCancelled(address account);
-    event RedemptionRejected(address account);
+    event RedemptionAdded(address indexed account, uint256 amount);
+    event RedemptionApproved(address indexed account);
+    event RedemptionCancelled(address indexed account);
+    event RedemptionRejected(address indexed account);
 
     /* ========== INTERNAL ========== */
 

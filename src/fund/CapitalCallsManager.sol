@@ -34,10 +34,10 @@ contract CapitalCallsManager {
     uint256 public totalCalled = 0; // Total amount of capital called
 
     // Event declarations.
-    event CapitalCallAdded(uint256 callId, uint256 amount, string drawdownType);
-    event AccountCapitalCallAdded(address account, uint256 callId, uint256 amount, AccountType accountType);
-    event AccountCapitalCallDone(uint256 callId, address account);
-    event AccountCapitalCallFailed(uint256 callId, address account);
+    event CapitalCallAdded(uint256 indexed callId, uint256 amount, string drawdownType);
+    event AccountCapitalCallAdded(address indexed account, uint256 indexed callId, uint256 amount);
+    event AccountCapitalCallDone(address indexed account, uint256 indexed callId);
+    event AccountCapitalCallFailed(address indexed account, uint256 indexed callId);
 
     /* ========== INTERNAL ========== */
 
@@ -64,11 +64,9 @@ contract CapitalCallsManager {
      */
     function _capitalCallFailed(uint16 callId, address account) internal {
         AccountCapitalCall storage acc = accountCapitalCalls[account][callId];
-        require(acc.accountType == AccountType.GP || acc.accountType == AccountType.LP, "Invalid account type.");
-
         acc.hasFailed = true;
 
-        emit AccountCapitalCallFailed(callId, account);
+        emit AccountCapitalCallFailed(account, callId);
     }
 
     /**
@@ -85,6 +83,6 @@ contract CapitalCallsManager {
         accountCapitalCalls[account][callId] =
             AccountCapitalCall({amount: amount, accountType: accountType, isDone: false, hasFailed: false});
 
-        emit AccountCapitalCallAdded(account, callId, amount, accountType);
+        emit AccountCapitalCallAdded(account, callId, amount);
     }
 }

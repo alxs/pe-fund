@@ -42,7 +42,7 @@ contract CommitmentManager {
     event LpCommitmentApproved(address indexed account, uint256 amount);
     event LpCommitmentRejected(address indexed account);
 
-    /* ========== VIEW FUNCTIONS ========== */
+    /* ========== READ-ONLY FUNCTIONS ========== */
 
     /**
      * @dev Returns the total committed amount for both GPs and LPs.

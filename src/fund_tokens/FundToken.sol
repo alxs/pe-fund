@@ -10,12 +10,24 @@ import "../interfaces/IFundToken.sol";
 
 /**
  * @title FundToken
+ * @notice This is an implementation of a token representing a stake in a Private Equity fund with distribution, fee and compliance features.
+ * @dev This contract extends ERC20Pausable for pausable token transfers, AccessControl for role-based
+ * access control, and ReentrancyGuard to prevent re-entrancy attacks.
  *
- * @notice A token contract for managing security with dividends and fees.
- * The contract inherits from several libraries from OpenZeppelin.
+ * All token holders are subject to fees and are eligible for distributions. Fees and distributions are calculated based on token
+ * balances at the time events occur and are recorded using a snapshot mechanism. This allows for fee and distribution calculations
+ * based on historical balances. An account must pay all pending fees and claim all distributions before burning tokens from their balance.
  *
- * It implements a security token that has the capability to pause,
- * manage roles, mint, burn, and distribute tokens. It can also charge management fees.
+ * Important note: An account must pay all pending fees and claim all distributions before burning tokens from their balance.
+ *
+ * Commit tokens come with extra restrictions: they can't be transferred freely and don't support distributions.
+ *
+ * Roles:
+ * - TOKEN_ADMIN: This role can mint and burn tokens, pause/unpause token transfers, distribute tokens, confirm distributions,
+ *   and charge management fees.
+ * - FUND_ADMIN: This role can mark fees as paid.
+ *
+ * The constructor sets the TOKEN_ADMIN as the contract deployer and the FUND_ADMIN as a separate address.
  */
 contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard {
     // Structs
@@ -33,19 +45,19 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
 
     /* ========== STATE VARIABLES ========== */
 
-    // Constants representing the different roles within the system
+    // Role definitions
     bytes32 public constant FUND_ADMIN = keccak256("FUND_ADMIN");
     bytes32 public constant TOKEN_ADMIN = keccak256("TOKEN_ADMIN");
 
-    // External contracts
+    // Contract references
     IComplianceRegistry public complianceRegistry;
     IERC20 public usdc;
 
-    // Distribution and fees
+    // Fee and distribution lists
     Distribution[] public distributions;
     Fee[] public fees;
 
-    // Mappings for storing account data for fees and distributions
+    // Account-level storage for snapshot balances, fee indices, and distribution data
     mapping(address => mapping(uint256 => uint256)) private snapshotBalances;
     mapping(address => uint256) private lastFeeIndex;
     mapping(address => uint256) private lastDistributionIndex;
@@ -58,9 +70,9 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
     /* ========== EVENTS ========== */
 
     event FeeRequested(uint256 indexed feeId, uint8 feePm, uint256 price);
-    event FeesPaid(address indexed payer, uint256 amount);
+    event FeesPaid(address indexed account, uint256 amount);
     event FeesWaived(address indexed account, uint256 upToFeeId);
-    event DistributionAdded(uint256 indexed distributionId, string distType, uint256 amount, uint8 scale);
+    event DistributionAdded(uint256 indexed distId, string distType, uint256 amount, uint8 scale);
     event DistributionConfirmed(address indexed receiver, uint256 distributionId);
     event DistributionClaimed(address indexed receiver, uint256 totalAmount);
 
@@ -76,14 +88,15 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
         _;
     }
 
-    /* ========== CONSTRUCTOR ========== */
+    /* ========== INITIALISATION ========== */
 
     /**
      * @notice Constructs the FundToken contract.
      *
      * @param complianceRegistry_ The address of the Compliance Registry contract
+     * @param usdc_ The address of the USDC contract
      * @param fundAdmin_ The address of the Fund Administrator
-     * @param isCommitToken_ A boolean indicating whether this is a Commit Token
+     * @param isCommitToken_ If true, restricts token operations to TOKEN_ADMIN role
      * @param name_ The name of the token
      * @param symbol_ The symbol of the token
      */
@@ -104,12 +117,13 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
         _setupRole(TOKEN_ADMIN, msg.sender); // Fund contract
     }
 
-    /* ========== VIEW FUNCTIONS ========== */
+    /* ========== READ-ONLY FUNCTIONS ========== */
 
     /**
-     * @dev Function to get the total amount of fees due for an account.
+     * @dev Retrieves the total amount of pending fees for an account.
+     *
      * @param account The account to calculate fees for.
-     * @return The total amount of fees due.
+     * @return Total amount of fees due.
      */
     function getPendingFees(address account) public view returns (uint256) {
         uint256 totalAccountFees = 0;
@@ -137,7 +151,10 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
     /* ========== MUTATIVE ========== */
 
     /**
-     * @dev Allows a user to pay their fees.
+     * @notice Allows a user to pay their outstanding fees.
+     *
+     * @dev The function transfers USDC equivalent to the outstanding fees from the user's account to the contract.
+     * It updates the `lastFeeIndex` to reflect that all past fees have been paid, and emits a `FeesPaid` event.
      */
     function payFees() external {
         address account = msg.sender;
@@ -150,7 +167,11 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
     }
 
     /**
-     * @notice Allows a user to claim all their distributions.
+     * @notice Allows a user to claim all their confirmed distributions.
+     *
+     * @dev The function transfers USDC equivalent to the total claimable distributions to the user's account.
+     * It updates the `lastDistributionIndex` to reflect that all past distributions have been claimed,
+     * and emits a `DistributionClaimed` event.
      */
     function claimAllDistributions() external {
         address account = msg.sender;
@@ -181,11 +202,11 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
      * @notice Burns tokens from a specific account.
      *
      * @dev Only an account with the TOKEN_ADMIN role can call this function.
+     * The account should not have any pending fees or distributions.
      *
      * @param account The address of the account whose tokens will be burned
      * @param amount The amount of tokens to burn
      */
-
     function burnFrom(address account, uint256 amount)
         public
         noPendingFees(account)
@@ -199,8 +220,9 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
      * @notice Charges management fee from all token holders.
      *
      * @dev Only an account with the TOKEN_ADMIN role can call this function.
+     * The new fee is added to the fees array and an event `FeeRequested` is emitted.
      *
-     * @param mgtFee The management fee to be charged
+     * @param mgtFee The management fee to be charged (as a percentage multiplied by 10)
      * @param price The price per token
      */
     function chargeManagementFee(uint8 mgtFee, uint256 price) public onlyRole(TOKEN_ADMIN) {
@@ -249,7 +271,7 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
         uint256 scaledShare = scaledAmount / totalSupply();
         require(scaledShare > 0, "Invalid distribution");
 
-        distributions.push(Distribution( scaledShare, distId,scale, distType));
+        distributions.push(Distribution(scaledShare, distId, scale, distType));
         totalDistributionAmount += amount;
         emit DistributionAdded(distId, distType, amount, scale);
     }
