@@ -34,6 +34,7 @@ contract Fund is
     IFundToken public lpCommitToken;
     IFundToken public gpFundToken;
     IFundToken public lpFundToken;
+    IERC20 public usdc;
 
     // Fund details
     string public name;
@@ -64,6 +65,7 @@ contract Fund is
     // Event declarations
     event Distribution(uint256 indexed distId, string distType, uint256 amount, uint8 scale);
     event ManagementFee(uint8 fee, uint256 price);
+    event AccountCapitalCallDone(uint16 callId, address account);
 
     /* ========== INITIALISATION ========== */
 
@@ -81,6 +83,7 @@ contract Fund is
      */
     function initialize(
         string memory name_,
+        string memory symbol_,
         address registryAddress_,
         address usdc_,
         uint32 initialClosing_,
@@ -103,6 +106,7 @@ contract Fund is
         price = price_;
         name = name_;
         registry = IComplianceRegistry(registryAddress_);
+        usdc = IERC20(usdc_);
         initialClosing = initialClosing_;
         finalClosing = finalClosing_;
         commitmentDate = commitmentDate_;
@@ -111,26 +115,26 @@ contract Fund is
         scale = scale_;
         prefRate = prefRate_;
         gpClawback = gpClawback_;
-        carriedInterest = carriedInterest_;
-        managementFee = managementFee_;
+        carriedInterest = carriedInterest_; // e.g. 20%
+        managementFee = managementFee_; // e.g. 2%
         compoundingInterval = compoundingInterval_;
 
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _setupRole(FUND_ADMIN, msg.sender);
 
-        _initTokens(usdc_);
+        _initTokens(usdc_, symbol_);
     }
 
-    function _initTokens(address usdc) private onlyInitializing {
+    function _initTokens(address usdc_, string memory symbol_) private onlyInitializing {
         gpCommitToken =
-        new FundToken(registry, usdc, msg.sender, true, string.concat(name, " - GP Commit Token"), string.concat(name, "_GPCT"));
-        gpFundToken =
-        new FundToken(registry, usdc, msg.sender, false,string.concat(name, " - GP Fund Token"), string.concat(name, "_GFT"));
-
+        new FundToken(registry, usdc_, msg.sender, true, string.concat(name, " - GP Commit Token"), string.concat(symbol_, "_GPCT"));
         lpCommitToken =
-        new FundToken(registry, usdc,msg.sender, true, string.concat(name, " - LP Commit Token"), string.concat(name, "_LPCT"));
+        new FundToken(registry, usdc_, msg.sender, true, string.concat(name, " - LP Commit Token"), string.concat(symbol_, "_LPCT"));
+
+        gpFundToken =
+        new FundToken(registry, usdc_, msg.sender, false, string.concat(name, " - GP Fund Token"), string.concat(symbol_, "_GFT"));
         lpFundToken =
-        new FundToken(registry, usdc, msg.sender, false,   string.concat(name, " - LP Fund Token"), string.concat(name, "_LFT"));
+        new FundToken(registry, usdc_, msg.sender, false, string.concat(name, " - LP Fund Token"), string.concat(symbol_, "_LFT"));
     }
 
     /* ========== MUTATIVE ========== */
@@ -494,22 +498,6 @@ contract Fund is
     }
 
     /**
-     * @notice Updates the carried interest rate
-     * @param _carriedInterest The new carried interest rate to be set
-     */
-    function setCarriedInterest(uint8 _carriedInterest) public onlyRole(FUND_ADMIN) {
-        carriedInterest = _carriedInterest;
-    }
-
-    /**
-     * @notice Updates the management fee
-     * @param _managementFee The new management fee to be set
-     */
-    function setManagementFee(uint8 _managementFee) public onlyRole(FUND_ADMIN) {
-        managementFee = _managementFee;
-    }
-
-    /**
      * @notice Pauses all token transfers in associated tokens.
      * The caller must have the FUND_ADMIN role.
      */
@@ -561,6 +549,7 @@ contract Fund is
         internal
     {
         require(distId < type(uint16).max, "Distribution ID exceeds uint16");
+        usdc.approve(address(token), amount);
         IFundToken(token).distribute(uint16(distId), distributionType, amount, scale);
     }
 }

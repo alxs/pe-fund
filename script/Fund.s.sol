@@ -46,6 +46,7 @@ contract FundDemoScript is Script {
         fund = Fund(address(fundProxy));
         fund.initialize({
             name_: "Demo Fund",
+            symbol_: "DEMO",
             registryAddress_: address(registry),
             usdc_: address(usdc),
             initialClosing_: uint32(block.timestamp + 1 days),

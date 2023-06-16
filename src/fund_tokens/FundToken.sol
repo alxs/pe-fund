@@ -53,17 +53,17 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
     IComplianceRegistry public complianceRegistry;
     IERC20 public usdc;
 
-    // Fee and distribution lists
+    // Fee and distribution data
     Distribution[] public distributions;
     Fee[] public fees;
+    uint256 public totalDistributionAmount;
+    uint256 public feesPaid;
 
     // Account-level storage for snapshot balances, fee indices, and distribution data
     mapping(address => mapping(uint256 => uint256)) private snapshotBalances;
     mapping(address => uint256) private lastFeeIndex;
     mapping(address => uint256) private lastDistributionIndex;
     mapping(address => mapping(uint256 => bool)) public confirmedDistributions;
-
-    uint256 public totalDistributionAmount;
 
     bool public isCommitToken;
 
@@ -73,8 +73,9 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
     event FeesPaid(address indexed account, uint256 amount);
     event FeesWaived(address indexed account, uint256 upToFeeId);
     event DistributionAdded(uint256 indexed distId, string distType, uint256 amount, uint8 scale);
-    event DistributionConfirmed(address indexed receiver, uint256 distributionId);
-    event DistributionClaimed(address indexed receiver, uint256 totalAmount);
+    event DistributionConfirmed(address indexed recipient, uint256 distributionId);
+    event DistributionCancelled(address indexed recipient, uint16 distId);
+    event DistributionClaimed(address indexed recipient, uint256 totalAmount);
 
     /* ========== MODIFIERS ========== */
 
@@ -160,9 +161,10 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
         address account = msg.sender;
         uint256 accountFees = getPendingFees(account);
 
-        require(usdc.transferFrom(account, address(this), accountFees), "USDC transfer failed");
-
         lastFeeIndex[account] = fees.length - 1;
+        feesPaid += accountFees;
+
+        require(usdc.transferFrom(account, address(this), accountFees), "USDC transfer failed");
         emit FeesPaid(account, accountFees);
     }
 
@@ -263,8 +265,8 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
         external
         onlyRole(TOKEN_ADMIN)
     {
+        // @todo scale is probably useless
         require(!isCommitToken, "This operation is not supported for commit tokens");
-
         require(totalSupply() > 0, "No holders to distribute to");
 
         uint256 scaledAmount = amount * scale;
@@ -273,11 +275,13 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
 
         distributions.push(Distribution(scaledShare, distId, scale, distType));
         totalDistributionAmount += amount;
+
+        require(usdc.transferFrom(msg.sender, address(this), amount), "USDC transfer failed");
         emit DistributionAdded(distId, distType, amount, scale);
     }
 
     /**
-     * @dev Function to confirm a pending distribution for an account.
+     * @notice Function to confirm a pending distribution for an account.
      * @param account The account confirming the distribution.
      * @param distId The ID of the distribution to confirm.
      */
@@ -288,24 +292,54 @@ contract FundToken is IFundToken, ERC20Pausable, AccessControl, ReentrancyGuard 
     }
 
     /**
-     * @dev Pauses all token transfers.
+     * @notice Cancel a distribution for a specific account. Transfers the USDC back to the fund.
+     * @param account The account to cancel the distribution for.
+     * @param distId The ID of the distribution to cancel.
+     */
+    function cancelDistribution(address account, uint16 distId) external onlyRole(TOKEN_ADMIN) {
+        uint256 pendingDist = _getPendingDistribution(account, distId);
+        require(pendingDist > 0, "No pending distribution to cancel");
+
+        snapshotBalances[account][distId] = 0;
+        totalDistributionAmount -= pendingDist;
+
+        require(usdc.transfer(msg.sender, pendingDist), "USDC transfer failed");
+        emit DistributionCancelled(account, distId);
+    }
+
+    /**
+     * @dev Function to collect all the fees.
+     *
+     * @notice This function transfers the total fees paid to the caller (TOKEN_ADMIN)
+     */
+    function collectFees() external onlyRole(TOKEN_ADMIN) {
+        require(feesPaid > 0, "No fees to collect");
+
+        uint256 feesToCollect = feesPaid;
+        feesPaid = 0;
+
+        require(usdc.transfer(msg.sender, feesToCollect), "USDC transfer failed");
+    }
+
+    /**
+     * @notice Pauses all token transfers.
      *
      * Requirements:
      *
      * - the caller must have the `TOKEN_ADMIN` role.
      */
-    function pause() public onlyRole(TOKEN_ADMIN) {
+    function pause() external onlyRole(TOKEN_ADMIN) {
         _pause();
     }
 
     /**
-     * @dev Unpauses all token transfers.
+     * @notice Unpauses all token transfers.
      *
      * Requirements:
      *
      * - the caller must have the `TOKEN_ADMIN` role.
      */
-    function unpause() public onlyRole(TOKEN_ADMIN) {
+    function unpause() external onlyRole(TOKEN_ADMIN) {
         _unpause();
     }
 
