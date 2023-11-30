@@ -1,7 +1,7 @@
 # Solidity Contracts for Private Equity Fund
 
 ## Overview
-This repository contains a suite of Solidity smart contracts implementing core functionality for a private equity fund based on the [Whole of Fund Model Limited Partnership Agreement](https://ilpa.org/model-lpa/) provided by the Institutional Limited Partners Association (ILPA).
+This repository contains a suite of Solidity smart contracts implementing core functionality for a private equity fund based on the [Whole of Fund Model Limited Partnership Agreement](https://ilpa.org/model-lpa/) (LPA) provided by the Institutional Limited Partners Association (ILPA).
 
 The contracts are intended to digitally represent key aspects of fund operations including compliance, capital calls, commitments, distributions, tokenization of fund interests, and general partnership management on-chain.
 
@@ -26,13 +26,13 @@ Distributions to LPs and carried interest distributions to the GP are handled by
 - Distributing proceeds among partners (Section 6.2)
 
 ### Redemptions
-The redemption process for Limited Partners (LPs) as described in Section 5 of the model LPA is implemented in the [`RedemptionManager`](https://github.com/alxs/solidity-contracts/blob/master/src/fund/RedemptionManager.sol) contract. The contract manages various states of the redemption workflow and maintains a record of all redemption activities. It allows LPs to initiate redemptions of their fund tokens in exchange for a proportionate share of the fund's net assets, as described in Section 5 of the model LPA. 
+The redemption process for LPs as described in Section 5 of the model LPA is implemented in the [`RedemptionManager`](https://github.com/alxs/solidity-contracts/blob/master/src/fund/RedemptionManager.sol) contract. The contract manages various states of the redemption workflow and maintains a record of all redemption activities. It allows LPs to initiate redemptions of their fund tokens in exchange for a proportionate share of the fund's net assets. 
 
 ### Interest Payments  
 The [`InterestPayments`](https://github.com/alxs/solidity-contracts/blob/master/src/fund/InterestPayments.sol) contract manages the calculation and distribution of interest payments to LPs per the terms in Section 6.2 of the model LPA. It supports different compounding periods (e.g. annual or quarterly) and calculates interest based on each LP's share of the fund's net asset value and investment performance. The contract also tracks all interest entries, including timestamp, compounded capital amount, daily interest rate, and cumulative cash flows to facilitate transparent and accurate interest distributions aligned with fund returns.
 
 ### Compliance
-The [`ComplianceRegistry`](https://github.com/alxs/solidity-contracts/blob/master/src/compliance/ComplianceRegistry.sol) contract manages the Know Your Customer (KYC) and Anti-Money Laundering (AML) verification status of fund participants as discussed in Section 3.4. It provides functionality to track and update the compliance status of all addresses to ensure only regulations-compliant entities interface with the fund.
+A basic compliance mechanism is provided in the [`ComplianceRegistry`](https://github.com/alxs/solidity-contracts/blob/master/src/compliance/ComplianceRegistry.sol) contract. It contains functionality to track and update the Know Your Customer (KYC) and Anti-Money Laundering (AML) verification status of all addresses as discussed in Section 3.4 of the model LPA to ensure only regulations-compliant entities interface with the fund.
 
 ## Key Contracts
 
